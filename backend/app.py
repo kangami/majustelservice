@@ -9,6 +9,12 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 
 DB_PATH = Path(__file__).parent / "majustel.db"
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+IS_POSTGRES = DATABASE_URL.startswith(("postgres://", "postgresql://"))
+
+if IS_POSTGRES:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "majustel-dev-secret-change-me-in-production")
@@ -16,13 +22,20 @@ CORS(app, supports_credentials=True)
 
 
 # ---------------------------------------------------------------------------
-# Database helpers
+# Database helpers — Postgres in production (DATABASE_URL), SQLite locally
 # ---------------------------------------------------------------------------
+
+def connect():
+    if IS_POSTGRES:
+        return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
+        g.db = connect()
     return g.db
 
 
@@ -33,9 +46,38 @@ def close_db(_exc):
         db.close()
 
 
-SCHEMA = """
+def q(sql):
+    """Translate '?' placeholders to '%s' for Postgres."""
+    return sql.replace("?", "%s") if IS_POSTGRES else sql
+
+
+def db_execute(sql, params=()):
+    """Execute a statement on the request connection; returns a cursor."""
+    cur = get_db().cursor()
+    cur.execute(q(sql), params)
+    return cur
+
+
+def fetch_one(sql, params=()):
+    return db_execute(sql, params).fetchone()
+
+
+def fetch_all(sql, params=()):
+    return db_execute(sql, params).fetchall()
+
+
+def insert_returning_id(sql, params=()):
+    if IS_POSTGRES:
+        cur = db_execute(sql + " RETURNING id", params)
+        return cur.fetchone()["id"]
+    return db_execute(sql, params).lastrowid
+
+
+PK_TYPE = "SERIAL PRIMARY KEY" if IS_POSTGRES else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id {PK_TYPE},
     name TEXT NOT NULL,
     category TEXT NOT NULL,
     brand TEXT NOT NULL,
@@ -51,7 +93,7 @@ CREATE TABLE IF NOT EXISTS products (
 );
 
 CREATE TABLE IF NOT EXISTS services (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id {PK_TYPE},
     name TEXT NOT NULL,
     description TEXT NOT NULL,
     price_from REAL NOT NULL,
@@ -63,7 +105,7 @@ CREATE TABLE IF NOT EXISTS services (
 );
 
 CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id {PK_TYPE},
     customer_name TEXT NOT NULL,
     email TEXT NOT NULL,
     phone TEXT,
@@ -74,20 +116,20 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'admin'
-);
-
 CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id {PK_TYPE},
     name TEXT NOT NULL,
     email TEXT NOT NULL,
     subject TEXT NOT NULL,
     message TEXT NOT NULL,
     created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id {PK_TYPE},
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'admin'
 );
 """
 
@@ -240,23 +282,37 @@ SERVICES = [
 
 
 def init_db():
-    db = sqlite3.connect(DB_PATH)
-    db.executescript(SCHEMA)
-    if db.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 0:
-        db.executemany(
-            "INSERT INTO products (name, category, brand, price, old_price, description, specs, stock, badge, icon, image, description_fr)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", PRODUCTS)
-    if db.execute("SELECT COUNT(*) FROM services").fetchone()[0] == 0:
-        db.executemany(
-            "INSERT INTO services (name, description, price_from, duration, icon, name_fr, description_fr, duration_fr)"
-            " VALUES (?,?,?,?,?,?,?,?)", SERVICES)
-    if db.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
+    conn = connect()
+    cur = conn.cursor()
+    ph = "%s" if IS_POSTGRES else "?"
+
+    if IS_POSTGRES:
+        cur.execute(SCHEMA)
+    else:
+        cur.executescript(SCHEMA)
+
+    def count(table):
+        cur2 = conn.cursor()
+        cur2.execute(f"SELECT COUNT(*) AS c FROM {table}")
+        return cur2.fetchone()["c"]
+
+    if count("products") == 0:
+        marks = ",".join([ph] * 12)
+        cur.executemany(
+            "INSERT INTO products (name, category, brand, price, old_price, description, specs,"
+            f" stock, badge, icon, image, description_fr) VALUES ({marks})", PRODUCTS)
+    if count("services") == 0:
+        marks = ",".join([ph] * 8)
+        cur.executemany(
+            "INSERT INTO services (name, description, price_from, duration, icon, name_fr,"
+            f" description_fr, duration_fr) VALUES ({marks})", SERVICES)
+    if count("users") == 0:
         admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
-        db.execute(
-            "INSERT INTO users (username, password_hash, role) VALUES (?,?,?)",
+        cur.execute(
+            f"INSERT INTO users (username, password_hash, role) VALUES ({ph},{ph},{ph})",
             ("admin", generate_password_hash(admin_password), "admin"))
-    db.commit()
-    db.close()
+    conn.commit()
+    conn.close()
 
 
 def require_admin(f):
@@ -264,8 +320,7 @@ def require_admin(f):
     def wrapper(*args, **kwargs):
         if not session.get("user_id"):
             return jsonify({"error": "Authentication required"}), 401
-        row = get_db().execute(
-            "SELECT role FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+        row = fetch_one("SELECT role FROM users WHERE id = ?", (session["user_id"],))
         if row is None or row["role"] != "admin":
             return jsonify({"error": "Admin access required"}), 403
         return f(*args, **kwargs)
@@ -278,7 +333,8 @@ def require_admin(f):
 
 @app.get("/api/health")
 def health():
-    return jsonify({"status": "ok", "service": "MajustelService API"})
+    return jsonify({"status": "ok", "service": "MajustelService API",
+                    "database": "postgres" if IS_POSTGRES else "sqlite"})
 
 
 # ---------------------------------------------------------------------------
@@ -290,7 +346,7 @@ def login():
     data = request.get_json(silent=True) or {}
     username = str(data.get("username", "")).strip()
     password = str(data.get("password", ""))
-    row = get_db().execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+    row = fetch_one("SELECT * FROM users WHERE username = ?", (username,))
     if row is None or not check_password_hash(row["password_hash"], password):
         return jsonify({"error": "Invalid username or password"}), 401
     session["user_id"] = row["id"]
@@ -307,8 +363,7 @@ def logout():
 def me():
     if not session.get("user_id"):
         return jsonify({"user": None})
-    row = get_db().execute(
-        "SELECT id, username, role FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    row = fetch_one("SELECT id, username, role FROM users WHERE id = ?", (session["user_id"],))
     if row is None:
         session.pop("user_id", None)
         return jsonify({"user": None})
@@ -365,18 +420,17 @@ def admin_create_product():
     values.setdefault("icon", "laptop")
     cols = ", ".join(values.keys())
     marks = ", ".join("?" * len(values))
-    db = get_db()
-    cur = db.execute(f"INSERT INTO products ({cols}) VALUES ({marks})", list(values.values()))
-    db.commit()
-    row = db.execute("SELECT * FROM products WHERE id = ?", (cur.lastrowid,)).fetchone()
+    new_id = insert_returning_id(
+        f"INSERT INTO products ({cols}) VALUES ({marks})", list(values.values()))
+    get_db().commit()
+    row = fetch_one("SELECT * FROM products WHERE id = ?", (new_id,))
     return jsonify(dict(row)), 201
 
 
 @app.put("/api/admin/products/<int:product_id>")
 @require_admin
 def admin_update_product(product_id):
-    db = get_db()
-    if db.execute("SELECT id FROM products WHERE id = ?", (product_id,)).fetchone() is None:
+    if fetch_one("SELECT id FROM products WHERE id = ?", (product_id,)) is None:
         return jsonify({"error": "Product not found"}), 404
     values, errors = product_payload(request.get_json(silent=True) or {}, partial=True)
     if errors:
@@ -384,19 +438,18 @@ def admin_update_product(product_id):
     if not values:
         return jsonify({"error": "No fields to update"}), 400
     assignments = ", ".join(f"{k} = ?" for k in values)
-    db.execute(f"UPDATE products SET {assignments} WHERE id = ?",
+    db_execute(f"UPDATE products SET {assignments} WHERE id = ?",
                [*values.values(), product_id])
-    db.commit()
-    row = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
+    get_db().commit()
+    row = fetch_one("SELECT * FROM products WHERE id = ?", (product_id,))
     return jsonify(dict(row))
 
 
 @app.delete("/api/admin/products/<int:product_id>")
 @require_admin
 def admin_delete_product(product_id):
-    db = get_db()
-    cur = db.execute("DELETE FROM products WHERE id = ?", (product_id,))
-    db.commit()
+    cur = db_execute("DELETE FROM products WHERE id = ?", (product_id,))
+    get_db().commit()
     if cur.rowcount == 0:
         return jsonify({"error": "Product not found"}), 404
     return jsonify({"message": "Product deleted"})
@@ -405,7 +458,7 @@ def admin_delete_product(product_id):
 @app.get("/api/admin/orders")
 @require_admin
 def admin_list_orders():
-    rows = get_db().execute("SELECT * FROM orders ORDER BY id DESC").fetchall()
+    rows = fetch_all("SELECT * FROM orders ORDER BY id DESC")
     return jsonify([dict(r) for r in rows])
 
 
@@ -416,14 +469,17 @@ def admin_update_order(order_id):
     status = data.get("status")
     if status not in ORDER_STATUSES:
         return jsonify({"error": f"Status must be one of: {', '.join(ORDER_STATUSES)}"}), 400
-    db = get_db()
-    cur = db.execute("UPDATE orders SET status = ? WHERE id = ?", (status, order_id))
-    db.commit()
+    cur = db_execute("UPDATE orders SET status = ? WHERE id = ?", (status, order_id))
+    get_db().commit()
     if cur.rowcount == 0:
         return jsonify({"error": "Order not found"}), 404
-    row = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    row = fetch_one("SELECT * FROM orders WHERE id = ?", (order_id,))
     return jsonify(dict(row))
 
+
+# ---------------------------------------------------------------------------
+# Public: products, services, orders, contact
+# ---------------------------------------------------------------------------
 
 @app.get("/api/products")
 def list_products():
@@ -435,16 +491,17 @@ def list_products():
         query += " AND category = ?"
         params.append(category)
     if search:
-        query += " AND (name LIKE ? OR brand LIKE ? OR description LIKE ?)"
+        op = "ILIKE" if IS_POSTGRES else "LIKE"
+        query += f" AND (name {op} ? OR brand {op} ? OR description {op} ?)"
         like = f"%{search}%"
         params += [like, like, like]
-    rows = get_db().execute(query + " ORDER BY id", params).fetchall()
+    rows = fetch_all(query + " ORDER BY id", params)
     return jsonify([dict(r) for r in rows])
 
 
 @app.get("/api/products/<int:product_id>")
 def get_product(product_id):
-    row = get_db().execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
+    row = fetch_one("SELECT * FROM products WHERE id = ?", (product_id,))
     if row is None:
         return jsonify({"error": "Product not found"}), 404
     return jsonify(dict(row))
@@ -452,7 +509,7 @@ def get_product(product_id):
 
 @app.get("/api/services")
 def list_services():
-    rows = get_db().execute("SELECT * FROM services ORDER BY id").fetchall()
+    rows = fetch_all("SELECT * FROM services ORDER BY id")
     return jsonify([dict(r) for r in rows])
 
 
@@ -466,25 +523,24 @@ def create_order():
     if not isinstance(data["items"], list) or not data["items"]:
         return jsonify({"error": "Cart is empty"}), 400
 
-    db = get_db()
     total = 0.0
     lines = []
     for item in data["items"]:
-        row = db.execute("SELECT * FROM products WHERE id = ?", (item.get("id"),)).fetchone()
+        row = fetch_one("SELECT * FROM products WHERE id = ?", (item.get("id"),))
         if row is None:
             return jsonify({"error": f"Unknown product id {item.get('id')}"}), 400
         qty = max(1, int(item.get("qty", 1)))
         total += row["price"] * qty
         lines.append(f"{row['name']} x{qty} @ {row['price']:.2f}")
 
-    cur = db.execute(
+    order_id = insert_returning_id(
         "INSERT INTO orders (customer_name, email, phone, address, items, total, created_at)"
         " VALUES (?,?,?,?,?,?,?)",
         (data["customer_name"], data["email"], data.get("phone", ""),
          data["address"], "; ".join(lines), round(total, 2),
          datetime.utcnow().isoformat(timespec="seconds")))
-    db.commit()
-    return jsonify({"order_id": cur.lastrowid, "total": round(total, 2),
+    get_db().commit()
+    return jsonify({"order_id": order_id, "total": round(total, 2),
                     "message": "Order placed successfully. We will contact you to confirm delivery."}), 201
 
 
@@ -495,12 +551,11 @@ def contact():
     missing = [f for f in required if not str(data.get(f, "")).strip()]
     if missing:
         return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
-    db = get_db()
-    db.execute(
+    db_execute(
         "INSERT INTO messages (name, email, subject, message, created_at) VALUES (?,?,?,?,?)",
         (data["name"], data["email"], data["subject"], data["message"],
          datetime.utcnow().isoformat(timespec="seconds")))
-    db.commit()
+    get_db().commit()
     return jsonify({"message": "Thanks for reaching out! Our team will reply within 24 hours."}), 201
 
 
