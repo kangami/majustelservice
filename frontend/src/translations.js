@@ -3,7 +3,7 @@ export const CONTACT_INFO = {
   phoneHref: 'tel:+12632887930',
   email: 'hello@majustelservices.ca',
   emailHref: 'mailto:hello@majustelservices.ca',
-  address: '42 Tech Avenue, Downtown',
+  address: '45 Pl. Charles-Le Moyne, Longueuil, QC, Canada, J4K 5G5',
 }
 
 export const translations = {
