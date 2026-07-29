@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from datetime import datetime
 from functools import wraps
@@ -10,7 +11,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 DB_PATH = Path(__file__).parent / "majustel.db"
 
 app = Flask(__name__)
-app.secret_key = "majustel-dev-secret-change-me-in-production"
+app.secret_key = os.environ.get("SECRET_KEY", "majustel-dev-secret-change-me-in-production")
 CORS(app, supports_credentials=True)
 
 
@@ -250,9 +251,10 @@ def init_db():
             "INSERT INTO services (name, description, price_from, duration, icon, name_fr, description_fr, duration_fr)"
             " VALUES (?,?,?,?,?,?,?,?)", SERVICES)
     if db.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
+        admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
         db.execute(
             "INSERT INTO users (username, password_hash, role) VALUES (?,?,?)",
-            ("admin", generate_password_hash("admin123"), "admin"))
+            ("admin", generate_password_hash(admin_password), "admin"))
     db.commit()
     db.close()
 
