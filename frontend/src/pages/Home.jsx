@@ -46,8 +46,8 @@ export default function Home() {
           </div>
           <div className="hero-visual">
             <div className="hero-card">
-              <img src="/logo.jpg" alt="MajustelService" className="hero-logo" />
-              <div className="hero-card-title">MajustelService</div>
+              <img src="/logo.jpg" alt="MajustelServices" className="hero-logo" />
+              <div className="hero-card-title">MajustelServices</div>
               <div className="hero-card-sub">{t.hero.cardSub}</div>
             </div>
             <div className="hero-blob" />

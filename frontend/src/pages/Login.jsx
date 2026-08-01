@@ -29,7 +29,7 @@ export default function Login() {
   return (
     <section className="section page login-page">
       <div className="login-card card">
-        <img src="/logo.jpg" alt="MajustelService" className="login-logo" />
+        <img src="/logo.jpg" alt="MajustelServices" className="login-logo" />
         <h1>{t.login.title}</h1>
         <p className="muted">{t.login.sub}</p>
 

@@ -1,4 +1,4 @@
-# MajustelService
+# MajustelServices
 
 Modern e-commerce website for laptops, computer equipment and maintenance services.
 

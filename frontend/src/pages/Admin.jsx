@@ -4,6 +4,7 @@ import { useAuth } from '../AuthContext.jsx'
 import { useLang } from '../LanguageContext.jsx'
 import {
   getProducts, adminCreateProduct, adminUpdateProduct, adminDeleteProduct,
+  getServices, adminCreateService, adminUpdateService, adminDeleteService,
   adminGetOrders, adminUpdateOrder,
 } from '../api.js'
 import { productImages, coverImage, fileToDataUrl } from '../imageUtils.js'
@@ -17,7 +18,13 @@ const EMPTY_PRODUCT = {
 const MAX_IMAGES = 5
 
 const ICONS = ['laptop', 'mouse', 'keyboard', 'dock', 'bag', 'ssd', 'ram', 'fan', 'charger', 'monitor', 'webcam']
+const SERVICE_ICONS = ['wrench', 'search', 'shield', 'screen', 'chip', 'database', 'os', 'fan', 'briefcase', 'laptop']
 const STATUSES = ['new', 'processing', 'shipped', 'completed', 'cancelled']
+
+const EMPTY_SERVICE = {
+  name: '', description: '', price_from: 0, duration: '', icon: 'wrench',
+  name_fr: '', description_fr: '', duration_fr: '',
+}
 
 export default function Admin() {
   const { user, loading, logout } = useAuth()
@@ -45,12 +52,17 @@ export default function Admin() {
           <button className={`chip ${tab === 'products' ? 'chip-active' : ''}`} onClick={() => setTab('products')}>
             {t.admin.products}
           </button>
+          <button className={`chip ${tab === 'services' ? 'chip-active' : ''}`} onClick={() => setTab('services')}>
+            {t.admin.servicesTab}
+          </button>
           <button className={`chip ${tab === 'orders' ? 'chip-active' : ''}`} onClick={() => setTab('orders')}>
             {t.admin.orders}
           </button>
         </div>
 
-        {tab === 'products' ? <ProductsAdmin /> : <OrdersAdmin />}
+        {tab === 'products' && <ProductsAdmin />}
+        {tab === 'services' && <ServicesAdmin />}
+        {tab === 'orders' && <OrdersAdmin />}
       </div>
     </section>
   )
@@ -306,6 +318,160 @@ function ProductModal({ product, onClose, onSaved }) {
           <label>{t.admin.descriptionFr}<textarea rows={2} value={form.description_fr} onChange={set('description_fr')} /></label>
           <button className="btn btn-primary btn-block" disabled={saving}>
             {saving ? t.admin.saving : product ? t.admin.save : t.admin.create}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+
+function ServicesAdmin() {
+  const { t, loc } = useLang()
+  const [services, setServices] = useState([])
+  const [editing, setEditing] = useState(null) // null | 'new' | service object
+  const [status, setStatus] = useState(null)
+
+  const load = () => getServices().then(setServices).catch((e) => setStatus({ type: 'error', text: e.message }))
+  useEffect(() => { load() }, [])
+
+  const handleDelete = async (s) => {
+    if (!window.confirm(t.admin.deleteConfirm.replace('{name}', s.name))) return
+    try {
+      await adminDeleteService(s.id)
+      setStatus({ type: 'success', text: `${t.admin.deleted}: ${s.name}` })
+      load()
+    } catch (e) {
+      setStatus({ type: 'error', text: e.message })
+    }
+  }
+
+  return (
+    <>
+      <div className="admin-toolbar">
+        {status && <div className={`alert alert-${status.type}`}>{status.text}</div>}
+        <button className="btn btn-primary" onClick={() => setEditing('new')}>
+          <Icon name="plus" size={16} /> {t.admin.addService}
+        </button>
+      </div>
+
+      <div className="table-wrap">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>{t.admin.service}</th>
+              <th>{t.admin.price}</th>
+              <th>{t.admin.duration}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {services.map((s) => (
+              <tr key={s.id}>
+                <td>
+                  <div className="table-product">
+                    <span className="table-thumb table-thumb-icon"><Icon name={s.icon} size={20} /></span>
+                    <div>
+                      <strong>{loc(s, 'name')}</strong>
+                      <span className="muted table-sub">{loc(s, 'description').slice(0, 70)}…</span>
+                    </div>
+                  </div>
+                </td>
+                <td>{s.price_from > 0 ? `$${s.price_from}` : t.servicesPage.free}</td>
+                <td>{loc(s, 'duration')}</td>
+                <td>
+                  <div className="table-actions">
+                    <button className="icon-button" title={t.admin.editService} onClick={() => setEditing(s)}>
+                      <Icon name="wrench" size={16} />
+                    </button>
+                    <button className="icon-button remove" title={t.admin.deleted} onClick={() => handleDelete(s)}>
+                      <Icon name="x" size={16} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {editing && (
+        <ServiceModal
+          service={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={(msg) => { setEditing(null); setStatus({ type: 'success', text: msg }); load() }}
+        />
+      )}
+    </>
+  )
+}
+
+function ServiceModal({ service, onClose, onSaved }) {
+  const { t } = useLang()
+  const [form, setForm] = useState(service ? {
+    ...EMPTY_SERVICE,
+    ...Object.fromEntries(Object.entries(service).map(([k, v]) => [k, v ?? ''])),
+  } : EMPTY_SERVICE)
+  const [error, setError] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  const set = (field) => (e) => setForm({ ...form, [field]: e.target.value })
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setSaving(true)
+    setError(null)
+    const payload = { ...form }
+    delete payload.id
+    try {
+      if (service) {
+        await adminUpdateService(service.id, payload)
+        onSaved(`${t.admin.updated}: ${form.name}`)
+      } else {
+        await adminCreateService(payload)
+        onSaved(`${t.admin.created}: ${form.name}`)
+      }
+    } catch (err) {
+      setError(err.message)
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal card" onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-header modal-header">
+          <h3>{service ? t.admin.editService : t.admin.addService}</h3>
+          <button className="icon-button" onClick={onClose} aria-label="Close">
+            <Icon name="x" size={20} />
+          </button>
+        </div>
+
+        {error && <div className="alert alert-error">{error}</div>}
+
+        <form className="contact-form" onSubmit={handleSubmit}>
+          <div className="form-row">
+            <label>{t.admin.serviceNameEn}<input required value={form.name} onChange={set('name')} /></label>
+            <label>{t.admin.serviceNameFr}<input value={form.name_fr} onChange={set('name_fr')} /></label>
+          </div>
+          <div className="form-row">
+            <label>{t.admin.priceFrom}<input required type="number" step="0.01" min="0" value={form.price_from} onChange={set('price_from')} /></label>
+            <label>
+              {t.admin.icon}
+              <select value={form.icon} onChange={set('icon')}>
+                {SERVICE_ICONS.map((i) => <option key={i} value={i}>{i}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="form-row">
+            <label>{t.admin.durationEn}<input required placeholder="Same day / 24–48 h…" value={form.duration} onChange={set('duration')} /></label>
+            <label>{t.admin.durationFr}<input placeholder="Le jour même / 24–48 h…" value={form.duration_fr} onChange={set('duration_fr')} /></label>
+          </div>
+          <label>{t.admin.description}<textarea required rows={3} value={form.description} onChange={set('description')} /></label>
+          <label>{t.admin.descriptionFr}<textarea rows={3} value={form.description_fr} onChange={set('description_fr')} /></label>
+          <button className="btn btn-primary btn-block" disabled={saving}>
+            {saving ? t.admin.saving : service ? t.admin.save : t.admin.createService}
           </button>
         </form>
       </div>

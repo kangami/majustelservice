@@ -11,9 +11,9 @@ export default function Footer() {
       <div className="container footer-grid">
         <div>
           <div className="brand footer-brand">
-            <img src="/logo.jpg" alt="MajustelService logo" className="brand-logo" />
+            <img src="/logo.jpg" alt="MajustelServices logo" className="brand-logo" />
             <span className="brand-name footer-brand-name">
-              Majustel<span className="brand-accent">Service</span>
+              Majustel<span className="brand-accent">Services</span>
             </span>
           </div>
           <p className="footer-text">{t.footer.tagline}</p>
@@ -51,7 +51,7 @@ export default function Footer() {
       </div>
       <div className="footer-bottom">
         <div className="container">
-          © {new Date().getFullYear()} MajustelService. {t.footer.rights}
+          © {new Date().getFullYear()} MajustelServices. {t.footer.rights}
         </div>
       </div>
     </footer>

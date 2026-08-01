@@ -340,7 +340,7 @@ def require_admin(f):
 
 @app.get("/api/health")
 def health():
-    return jsonify({"status": "ok", "service": "MajustelService API",
+    return jsonify({"status": "ok", "service": "MajustelServices API",
                     "database": "postgres" if IS_POSTGRES else "sqlite"})
 
 
@@ -478,6 +478,71 @@ def admin_delete_product(product_id):
     if cur.rowcount == 0:
         return jsonify({"error": "Product not found"}), 404
     return jsonify({"message": "Product deleted"})
+
+
+SERVICE_FIELDS = ["name", "description", "price_from", "duration", "icon",
+                  "name_fr", "description_fr", "duration_fr"]
+
+
+def service_payload(data, partial=False):
+    errors = []
+    values = {f: data[f] for f in SERVICE_FIELDS if f in data}
+    if not partial:
+        for field in ["name", "description", "duration"]:
+            if not str(data.get(field, "")).strip():
+                errors.append(field)
+        if "price_from" not in data:
+            errors.append("price_from")
+    if "price_from" in values:
+        try:
+            values["price_from"] = max(0.0, float(values["price_from"] or 0))
+        except (TypeError, ValueError):
+            errors.append("price_from")
+    return values, errors
+
+
+@app.post("/api/admin/services")
+@require_admin
+def admin_create_service():
+    values, errors = service_payload(request.get_json(silent=True) or {})
+    if errors:
+        return jsonify({"error": f"Invalid or missing fields: {', '.join(errors)}"}), 400
+    values.setdefault("icon", "wrench")
+    cols = ", ".join(values.keys())
+    marks = ", ".join("?" * len(values))
+    new_id = insert_returning_id(
+        f"INSERT INTO services ({cols}) VALUES ({marks})", list(values.values()))
+    get_db().commit()
+    row = fetch_one("SELECT * FROM services WHERE id = ?", (new_id,))
+    return jsonify(dict(row)), 201
+
+
+@app.put("/api/admin/services/<int:service_id>")
+@require_admin
+def admin_update_service(service_id):
+    if fetch_one("SELECT id FROM services WHERE id = ?", (service_id,)) is None:
+        return jsonify({"error": "Service not found"}), 404
+    values, errors = service_payload(request.get_json(silent=True) or {}, partial=True)
+    if errors:
+        return jsonify({"error": f"Invalid fields: {', '.join(errors)}"}), 400
+    if not values:
+        return jsonify({"error": "No fields to update"}), 400
+    assignments = ", ".join(f"{k} = ?" for k in values)
+    db_execute(f"UPDATE services SET {assignments} WHERE id = ?",
+               [*values.values(), service_id])
+    get_db().commit()
+    row = fetch_one("SELECT * FROM services WHERE id = ?", (service_id,))
+    return jsonify(dict(row))
+
+
+@app.delete("/api/admin/services/<int:service_id>")
+@require_admin
+def admin_delete_service(service_id):
+    cur = db_execute("DELETE FROM services WHERE id = ?", (service_id,))
+    get_db().commit()
+    if cur.rowcount == 0:
+        return jsonify({"error": "Service not found"}), 404
+    return jsonify({"message": "Service deleted"})
 
 
 @app.get("/api/admin/orders")

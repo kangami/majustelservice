@@ -22,9 +22,9 @@ export default function Navbar() {
     <header className="navbar">
       <div className="container navbar-inner">
         <Link to="/" className="brand" onClick={() => setMenuOpen(false)}>
-          <img src="/logo.jpg" alt="MajustelService logo" className="brand-logo" />
+          <img src="/logo.jpg" alt="MajustelServices logo" className="brand-logo" />
           <span className="brand-name">
-            Majustel<span className="brand-accent">Service</span>
+            Majustel<span className="brand-accent">Services</span>
           </span>
         </Link>
 
