@@ -60,14 +60,16 @@ export default function Navbar() {
           >
             {lang === 'en' ? 'FR' : 'EN'}
           </button>
-          <Link
-            to={user ? '/admin' : '/login'}
-            className="account-button"
-            aria-label={user ? t.nav.admin : t.login.title}
-            title={user ? `${t.admin.signedInAs} ${user.username}` : t.login.title}
-          >
-            <Icon name="shield" size={20} />
-          </Link>
+          {user && (
+            <Link
+              to="/admin"
+              className="account-button"
+              aria-label={t.nav.admin}
+              title={`${t.admin.signedInAs} ${user.username}`}
+            >
+              <Icon name="shield" size={20} />
+            </Link>
+          )}
           <button className="cart-button" onClick={() => setOpen(true)} aria-label="Cart">
             <Icon name="cart" size={22} />
             {count > 0 && <span className="cart-badge">{count}</span>}

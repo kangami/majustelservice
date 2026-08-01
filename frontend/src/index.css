@@ -487,6 +487,18 @@ main {
   transform: scale(1.05);
 }
 
+.photo-count {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  background: rgba(16, 21, 29, 0.65);
+  color: var(--white);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+
 .product-card:hover .product-icon {
   transform: scale(1.08);
 }
@@ -1247,6 +1259,116 @@ main {
 }
 
 .contact-form select:focus { border-color: var(--blue); }
+
+/* ---------- Admin image manager ---------- */
+.image-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field-label {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 10px;
+}
+
+.image-slot {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1.5px solid var(--gray-200);
+}
+
+.image-slot.is-cover { border-color: var(--blue); }
+
+.image-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cover-tag {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(59, 142, 222, 0.9);
+  color: var(--white);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 0;
+}
+
+.slot-action {
+  position: absolute;
+  top: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  display: grid;
+  place-items: center;
+  background: rgba(16, 21, 29, 0.6);
+  color: var(--white);
+  transition: background 0.15s;
+}
+
+.slot-remove { right: 4px; }
+.slot-remove:hover { background: #b42318; }
+
+.make-cover { left: 4px; }
+.make-cover:hover { background: var(--blue); }
+
+.add-image-tile {
+  aspect-ratio: 1;
+  border: 1.5px dashed var(--gray-200);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--gray-500);
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  padding: 6px;
+}
+
+.add-image-tile:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.url-row {
+  display: flex;
+  gap: 8px;
+}
+
+.url-row input {
+  flex: 1;
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font-size: 0.88rem;
+  outline: none;
+}
+
+.url-row input:focus { border-color: var(--blue); }
+
+.image-hint { font-size: 0.8rem; }
 
 /* ---------- Footer ---------- */
 .footer {

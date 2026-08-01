@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 from datetime import datetime
@@ -89,7 +90,8 @@ CREATE TABLE IF NOT EXISTS products (
     badge TEXT,
     icon TEXT NOT NULL DEFAULT 'laptop',
     image TEXT,
-    description_fr TEXT
+    description_fr TEXT,
+    images TEXT
 );
 
 CREATE TABLE IF NOT EXISTS services (
@@ -288,8 +290,13 @@ def init_db():
 
     if IS_POSTGRES:
         cur.execute(SCHEMA)
+        cur.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS images TEXT")
     else:
         cur.executescript(SCHEMA)
+        try:
+            cur.execute("ALTER TABLE products ADD COLUMN images TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
     def count(table):
         cur2 = conn.cursor()
@@ -376,8 +383,18 @@ def me():
 
 PRODUCT_FIELDS = ["name", "category", "brand", "price", "old_price",
                   "description", "specs", "stock", "badge", "icon", "image",
-                  "description_fr"]
+                  "description_fr", "images"]
 ORDER_STATUSES = ["new", "processing", "shipped", "completed", "cancelled"]
+MAX_IMAGES = 5
+
+
+def product_to_dict(row):
+    d = dict(row)
+    try:
+        d["images"] = json.loads(d.get("images") or "[]")
+    except (TypeError, ValueError):
+        d["images"] = []
+    return d
 
 
 def product_payload(data, partial=False):
@@ -405,6 +422,14 @@ def product_payload(data, partial=False):
             errors.append("stock")
     if values.get("category") not in (None, "laptops", "accessories"):
         errors.append("category")
+    if "images" in values:
+        imgs = values["images"] or []
+        if not isinstance(imgs, list) or not all(isinstance(i, str) for i in imgs):
+            errors.append("images")
+        else:
+            imgs = [i.strip() for i in imgs if i.strip()][:MAX_IMAGES]
+            values["images"] = json.dumps(imgs)
+            values["image"] = imgs[0] if imgs else None
     return values, errors
 
 
@@ -424,7 +449,7 @@ def admin_create_product():
         f"INSERT INTO products ({cols}) VALUES ({marks})", list(values.values()))
     get_db().commit()
     row = fetch_one("SELECT * FROM products WHERE id = ?", (new_id,))
-    return jsonify(dict(row)), 201
+    return jsonify(product_to_dict(row)), 201
 
 
 @app.put("/api/admin/products/<int:product_id>")
@@ -442,7 +467,7 @@ def admin_update_product(product_id):
                [*values.values(), product_id])
     get_db().commit()
     row = fetch_one("SELECT * FROM products WHERE id = ?", (product_id,))
-    return jsonify(dict(row))
+    return jsonify(product_to_dict(row))
 
 
 @app.delete("/api/admin/products/<int:product_id>")
@@ -496,7 +521,7 @@ def list_products():
         like = f"%{search}%"
         params += [like, like, like]
     rows = fetch_all(query + " ORDER BY id", params)
-    return jsonify([dict(r) for r in rows])
+    return jsonify([product_to_dict(r) for r in rows])
 
 
 @app.get("/api/products/<int:product_id>")
@@ -504,7 +529,7 @@ def get_product(product_id):
     row = fetch_one("SELECT * FROM products WHERE id = ?", (product_id,))
     if row is None:
         return jsonify({"error": "Product not found"}), 404
-    return jsonify(dict(row))
+    return jsonify(product_to_dict(row))
 
 
 @app.get("/api/services")

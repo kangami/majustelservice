@@ -6,13 +6,15 @@ import {
   getProducts, adminCreateProduct, adminUpdateProduct, adminDeleteProduct,
   adminGetOrders, adminUpdateOrder,
 } from '../api.js'
+import { productImages, coverImage, fileToDataUrl } from '../imageUtils.js'
 import Icon from '../components/Icons.jsx'
 
 const EMPTY_PRODUCT = {
   name: '', brand: '', category: 'laptops', price: '', old_price: '',
-  stock: 10, badge: '', icon: 'laptop', image: '', specs: '',
+  stock: 10, badge: '', icon: 'laptop', specs: '',
   description: '', description_fr: '',
 }
+const MAX_IMAGES = 5
 
 const ICONS = ['laptop', 'mouse', 'keyboard', 'dock', 'bag', 'ssd', 'ram', 'fan', 'charger', 'monitor', 'webcam']
 const STATUSES = ['new', 'processing', 'shipped', 'completed', 'cancelled']
@@ -102,8 +104,8 @@ function ProductsAdmin() {
               <tr key={p.id}>
                 <td>
                   <div className="table-product">
-                    {p.image
-                      ? <img src={p.image} alt="" className="table-thumb" />
+                    {coverImage(p)
+                      ? <img src={coverImage(p)} alt="" className="table-thumb" />
                       : <span className="table-thumb table-thumb-icon"><Icon name={p.icon} size={20} /></span>}
                     <div>
                       <strong>{p.name}</strong>
@@ -150,11 +152,44 @@ function ProductModal({ product, onClose, onSaved }) {
   const [form, setForm] = useState(product ? {
     ...EMPTY_PRODUCT,
     ...Object.fromEntries(Object.entries(product).map(([k, v]) => [k, v ?? ''])),
-  } : EMPTY_PRODUCT)
+    images: productImages(product),
+  } : { ...EMPTY_PRODUCT, images: [] })
+  const [urlInput, setUrlInput] = useState('')
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
 
   const set = (field) => (e) => setForm({ ...form, [field]: e.target.value })
+
+  const handleFiles = async (e) => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!files.length) return
+    const room = MAX_IMAGES - form.images.length
+    if (room <= 0) return
+    try {
+      const dataUrls = await Promise.all(files.slice(0, room).map((f) => fileToDataUrl(f)))
+      setForm((prev) => ({ ...prev, images: [...prev.images, ...dataUrls].slice(0, MAX_IMAGES) }))
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  const addUrl = () => {
+    const url = urlInput.trim()
+    if (!url || form.images.length >= MAX_IMAGES) return
+    setForm((prev) => ({ ...prev, images: [...prev.images, url].slice(0, MAX_IMAGES) }))
+    setUrlInput('')
+  }
+
+  const removeImage = (i) =>
+    setForm((prev) => ({ ...prev, images: prev.images.filter((_, idx) => idx !== i) }))
+
+  const makeCover = (i) =>
+    setForm((prev) => {
+      const images = [...prev.images]
+      const [img] = images.splice(i, 1)
+      return { ...prev, images: [img, ...images] }
+    })
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -162,6 +197,7 @@ function ProductModal({ product, onClose, onSaved }) {
     setError(null)
     const payload = { ...form, old_price: form.old_price === '' ? null : form.old_price }
     delete payload.id
+    delete payload.image // backend derives the cover from images[0]
     try {
       if (product) {
         await adminUpdateProduct(product.id, payload)
@@ -216,7 +252,55 @@ function ProductModal({ product, onClose, onSaved }) {
             <label>{t.admin.stock}<input type="number" min="0" value={form.stock} onChange={set('stock')} /></label>
             <label>{t.admin.badge}<input placeholder="Sale, New, Popular…" value={form.badge} onChange={set('badge')} /></label>
           </div>
-          <label>{t.admin.imagePath}<input placeholder="/products/example.jpg" value={form.image} onChange={set('image')} /></label>
+          <div className="image-manager">
+            <span className="field-label">{t.admin.images}</span>
+            <div className="image-grid">
+              {form.images.map((src, i) => (
+                <div key={`${i}-${src.slice(0, 40)}`} className={`image-slot ${i === 0 ? 'is-cover' : ''}`}>
+                  <img src={src} alt="" />
+                  {i === 0 ? (
+                    <span className="cover-tag">{t.admin.cover}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="slot-action make-cover"
+                      title={t.admin.makeCover}
+                      onClick={() => makeCover(i)}
+                    >
+                      <Icon name="star" size={13} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="slot-action slot-remove"
+                    title={t.admin.removeImage}
+                    onClick={() => removeImage(i)}
+                  >
+                    <Icon name="x" size={13} />
+                  </button>
+                </div>
+              ))}
+              {form.images.length < MAX_IMAGES && (
+                <label className="add-image-tile" title={t.admin.addImages}>
+                  <Icon name="plus" size={22} />
+                  <span>{t.admin.addImages}</span>
+                  <input type="file" accept="image/*" multiple hidden onChange={handleFiles} />
+                </label>
+              )}
+            </div>
+            {form.images.length >= MAX_IMAGES && <span className="muted image-hint">{t.admin.maxImages}</span>}
+            {form.images.length < MAX_IMAGES && (
+              <div className="url-row">
+                <input
+                  placeholder={t.admin.imageUrlPlaceholder}
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addUrl() } }}
+                />
+                <button type="button" className="btn btn-ghost btn-sm" onClick={addUrl}>{t.admin.addUrl}</button>
+              </div>
+            )}
+          </div>
           <label>{t.admin.specs}<input placeholder="CPU · RAM · Storage · Display" value={form.specs} onChange={set('specs')} /></label>
           <label>{t.admin.description}<textarea rows={2} value={form.description} onChange={set('description')} /></label>
           <label>{t.admin.descriptionFr}<textarea rows={2} value={form.description_fr} onChange={set('description_fr')} /></label>

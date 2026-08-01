@@ -1,23 +1,36 @@
+import { useState } from 'react'
 import { useCart } from '../CartContext.jsx'
 import { useLang } from '../LanguageContext.jsx'
+import { productImages } from '../imageUtils.js'
 import Icon from './Icons.jsx'
 
 export default function ProductCard({ product }) {
   const { addItem } = useCart()
   const { t } = useLang()
+  const [hover, setHover] = useState(false)
+
+  const imgs = productImages(product)
+  const src = hover && imgs[1] ? imgs[1] : imgs[0]
 
   return (
-    <article className="product-card">
+    <article
+      className="product-card"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
       <div className="product-visual">
         {product.badge && (
           <span className={`badge badge-${product.badge.toLowerCase().replace(' ', '-')}`}>
             {t.badges[product.badge] || product.badge}
           </span>
         )}
-        {product.image ? (
-          <img src={product.image} alt={product.name} className="product-photo" loading="lazy" />
+        {src ? (
+          <img src={src} alt={product.name} className="product-photo" loading="lazy" />
         ) : (
           <Icon name={product.icon} size={64} strokeWidth={1.3} className="product-icon" />
+        )}
+        {imgs.length > 1 && (
+          <span className="photo-count">{imgs.length}</span>
         )}
       </div>
       <div className="product-body">

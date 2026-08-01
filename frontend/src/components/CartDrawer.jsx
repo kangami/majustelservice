@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useCart } from '../CartContext.jsx'
 import { useLang } from '../LanguageContext.jsx'
 import { placeOrder } from '../api.js'
+import { coverImage } from '../imageUtils.js'
 import Icon from './Icons.jsx'
 
 export default function CartDrawer() {
@@ -63,8 +64,8 @@ export default function CartDrawer() {
               {items.map((item) => (
                 <li key={item.id} className="cart-item">
                   <div className="cart-item-icon">
-                    {item.image ? (
-                      <img src={item.image} alt="" className="cart-item-photo" />
+                    {coverImage(item) ? (
+                      <img src={coverImage(item)} alt="" className="cart-item-photo" />
                     ) : (
                       <Icon name={item.icon} size={26} strokeWidth={1.5} />
                     )}
