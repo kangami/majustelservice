@@ -18,6 +18,12 @@ export const getServices = () => request('/services')
 export const placeOrder = (payload) =>
   request('/orders', { method: 'POST', body: JSON.stringify(payload) })
 
+export const createCheckoutSession = (payload) =>
+  request('/checkout/session', { method: 'POST', body: JSON.stringify(payload) })
+
+export const verifyCheckout = (sessionId) =>
+  request(`/checkout/verify?session_id=${encodeURIComponent(sessionId)}`)
+
 export const sendMessage = (payload) =>
   request('/contact', { method: 'POST', body: JSON.stringify(payload) })
 

@@ -8,6 +8,7 @@ import Services from './pages/Services.jsx'
 import Contact from './pages/Contact.jsx'
 import Login from './pages/Login.jsx'
 import Admin from './pages/Admin.jsx'
+import CheckoutResult from './pages/CheckoutResult.jsx'
 
 export default function App() {
   return (
@@ -21,6 +22,8 @@ export default function App() {
           <Route path="/contact" element={<Contact />} />
           <Route path="/login" element={<Login />} />
           <Route path="/admin" element={<Admin />} />
+          <Route path="/checkout/success" element={<CheckoutResult />} />
+          <Route path="/checkout/cancel" element={<CheckoutResult />} />
         </Routes>
       </main>
       <Footer />

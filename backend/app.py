@@ -21,6 +21,17 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "majustel-dev-secret-change-me-in-production")
 CORS(app, supports_credentials=True)
 
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+if STRIPE_SECRET_KEY:
+    import stripe
+    stripe.api_key = STRIPE_SECRET_KEY
+
+
+def frontend_base_url():
+    return (os.environ.get("FRONTEND_URL")
+            or request.headers.get("Origin")
+            or "http://localhost:5173").rstrip("/")
+
 
 # ---------------------------------------------------------------------------
 # Database helpers — Postgres in production (DATABASE_URL), SQLite locally
@@ -115,6 +126,8 @@ CREATE TABLE IF NOT EXISTS orders (
     items TEXT NOT NULL,
     total REAL NOT NULL,
     status TEXT NOT NULL DEFAULT 'new',
+    payment_method TEXT DEFAULT 'cod',
+    stripe_session_id TEXT,
     created_at TEXT NOT NULL
 );
 
@@ -288,15 +301,27 @@ def init_db():
     cur = conn.cursor()
     ph = "%s" if IS_POSTGRES else "?"
 
+    migrations_pg = [
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS images TEXT",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'cod'",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_session_id TEXT",
+    ]
+    migrations_sqlite = [
+        "ALTER TABLE products ADD COLUMN images TEXT",
+        "ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT 'cod'",
+        "ALTER TABLE orders ADD COLUMN stripe_session_id TEXT",
+    ]
     if IS_POSTGRES:
         cur.execute(SCHEMA)
-        cur.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS images TEXT")
+        for stmt in migrations_pg:
+            cur.execute(stmt)
     else:
         cur.executescript(SCHEMA)
-        try:
-            cur.execute("ALTER TABLE products ADD COLUMN images TEXT")
-        except sqlite3.OperationalError:
-            pass  # column already exists
+        for stmt in migrations_sqlite:
+            try:
+                cur.execute(stmt)
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
     def count(table):
         cur2 = conn.cursor()
@@ -384,7 +409,8 @@ def me():
 PRODUCT_FIELDS = ["name", "category", "brand", "price", "old_price",
                   "description", "specs", "stock", "badge", "icon", "image",
                   "description_fr", "images"]
-ORDER_STATUSES = ["new", "processing", "shipped", "completed", "cancelled"]
+ORDER_STATUSES = ["new", "awaiting_payment", "paid", "processing", "shipped",
+                  "completed", "cancelled"]
 MAX_IMAGES = 5
 
 
@@ -603,35 +629,115 @@ def list_services():
     return jsonify([dict(r) for r in rows])
 
 
-@app.post("/api/orders")
-def create_order():
-    data = request.get_json(silent=True) or {}
+def validate_cart(data):
+    """Validate an order payload; returns (cart, error_response)."""
     required = ["customer_name", "email", "address", "items"]
     missing = [f for f in required if not data.get(f)]
     if missing:
-        return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
+        return None, (jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400)
     if not isinstance(data["items"], list) or not data["items"]:
-        return jsonify({"error": "Cart is empty"}), 400
+        return None, (jsonify({"error": "Cart is empty"}), 400)
 
     total = 0.0
     lines = []
+    products = []
     for item in data["items"]:
         row = fetch_one("SELECT * FROM products WHERE id = ?", (item.get("id"),))
         if row is None:
-            return jsonify({"error": f"Unknown product id {item.get('id')}"}), 400
+            return None, (jsonify({"error": f"Unknown product id {item.get('id')}"}), 400)
         qty = max(1, int(item.get("qty", 1)))
         total += row["price"] * qty
         lines.append(f"{row['name']} x{qty} @ {row['price']:.2f}")
+        products.append((row, qty))
+    return {"total": round(total, 2), "lines": lines, "products": products}, None
 
+
+def insert_order(data, cart, status="new", payment_method="cod"):
     order_id = insert_returning_id(
-        "INSERT INTO orders (customer_name, email, phone, address, items, total, created_at)"
-        " VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO orders (customer_name, email, phone, address, items, total,"
+        " status, payment_method, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
         (data["customer_name"], data["email"], data.get("phone", ""),
-         data["address"], "; ".join(lines), round(total, 2),
-         datetime.utcnow().isoformat(timespec="seconds")))
+         data["address"], "; ".join(cart["lines"]), cart["total"],
+         status, payment_method, datetime.utcnow().isoformat(timespec="seconds")))
     get_db().commit()
-    return jsonify({"order_id": order_id, "total": round(total, 2),
+    return order_id
+
+
+@app.post("/api/orders")
+def create_order():
+    data = request.get_json(silent=True) or {}
+    cart, error = validate_cart(data)
+    if error:
+        return error
+    order_id = insert_order(data, cart)
+    return jsonify({"order_id": order_id, "total": cart["total"],
                     "message": "Order placed successfully. We will contact you to confirm delivery."}), 201
+
+
+# ---------------------------------------------------------------------------
+# Stripe checkout
+# ---------------------------------------------------------------------------
+
+@app.post("/api/checkout/session")
+def create_checkout_session():
+    if not STRIPE_SECRET_KEY:
+        return jsonify({"error": "Card payment is not configured"}), 503
+    data = request.get_json(silent=True) or {}
+    cart, error = validate_cart(data)
+    if error:
+        return error
+
+    line_items = [{
+        "price_data": {
+            "currency": "cad",
+            "product_data": {"name": row["name"]},
+            "unit_amount": int(round(row["price"] * 100)),
+        },
+        "quantity": qty,
+    } for row, qty in cart["products"]]
+
+    order_id = insert_order(data, cart, status="awaiting_payment", payment_method="card")
+    base = frontend_base_url()
+    try:
+        checkout = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=line_items,
+            customer_email=data["email"],
+            metadata={"order_id": str(order_id)},
+            success_url=f"{base}/checkout/success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{base}/checkout/cancel",
+        )
+    except Exception as exc:
+        db_execute("DELETE FROM orders WHERE id = ?", (order_id,))
+        get_db().commit()
+        return jsonify({"error": f"Payment provider error: {exc}"}), 502
+
+    db_execute("UPDATE orders SET stripe_session_id = ? WHERE id = ?",
+               (checkout.id, order_id))
+    get_db().commit()
+    return jsonify({"url": checkout.url})
+
+
+@app.get("/api/checkout/verify")
+def verify_checkout():
+    if not STRIPE_SECRET_KEY:
+        return jsonify({"error": "Card payment is not configured"}), 503
+    session_id = request.args.get("session_id", "")
+    if not session_id:
+        return jsonify({"error": "Missing session_id"}), 400
+    try:
+        checkout = stripe.checkout.Session.retrieve(session_id)
+    except Exception as exc:
+        return jsonify({"error": f"Payment provider error: {exc}"}), 502
+
+    row = fetch_one("SELECT * FROM orders WHERE stripe_session_id = ?", (session_id,))
+    if row is None:
+        return jsonify({"error": "Order not found"}), 404
+    paid = checkout.payment_status == "paid"
+    if paid and row["status"] == "awaiting_payment":
+        db_execute("UPDATE orders SET status = 'paid' WHERE id = ?", (row["id"],))
+        get_db().commit()
+    return jsonify({"paid": paid, "order_id": row["id"], "total": row["total"]})
 
 
 @app.post("/api/contact")

@@ -1058,6 +1058,30 @@ main {
 .login-card .contact-form { text-align: left; }
 .login-card .alert { margin-bottom: 16px; text-align: left; }
 
+/* ---------- Checkout result ---------- */
+.checkout-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkout-result .btn { margin-top: 16px; }
+
+.result-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--blue-soft);
+  color: var(--blue-dark);
+  margin-bottom: 8px;
+}
+
+.result-success { background: #e7f6ee; color: #0e7a4e; }
+.result-cancel { background: #fdecec; color: #b42318; }
+
 /* ---------- Language toggle ---------- */
 .lang-toggle {
   min-width: 44px;
@@ -1218,6 +1242,8 @@ main {
 }
 
 .status-new { color: var(--blue-dark); border-color: var(--blue); }
+.status-awaiting_payment { color: #92400e; border-color: #f59e0b; }
+.status-paid { color: #0e7a4e; border-color: #10b981; }
 .status-processing { color: #92400e; border-color: #f59e0b; }
 .status-shipped { color: #5b21b6; border-color: #8b5cf6; }
 .status-completed { color: #0e7a4e; border-color: #10b981; }

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useCart } from '../CartContext.jsx'
 import { useLang } from '../LanguageContext.jsx'
-import { placeOrder } from '../api.js'
+import { placeOrder, createCheckoutSession } from '../api.js'
 import { coverImage } from '../imageUtils.js'
 import Icon from './Icons.jsx'
 
@@ -21,16 +21,21 @@ export default function CartDrawer() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    const mode = e.nativeEvent?.submitter?.value || 'cod'
     setSubmitting(true)
     setStatus(null)
+    const payload = { ...form, items: items.map((i) => ({ id: i.id, qty: i.qty })) }
     try {
-      const res = await placeOrder({
-        ...form,
-        items: items.map((i) => ({ id: i.id, qty: i.qty })),
-      })
+      if (mode === 'card') {
+        setStatus({ type: 'info', text: t.cart.redirecting })
+        const res = await createCheckoutSession(payload)
+        window.location.href = res.url
+        return // cart is cleared on the success page after payment
+      }
+      const res = await placeOrder(payload)
       clearCart()
       setCheckout(false)
-      setStatus({ type: 'success', text: `Order #${res.order_id} placed — total $${res.total.toFixed(2)}. ${res.message}` })
+      setStatus({ type: 'success', text: `Order #${res.order_id} — $${res.total.toFixed(2)}. ${res.message}` })
       setForm({ customer_name: '', email: '', phone: '', address: '' })
     } catch (err) {
       setStatus({ type: 'error', text: err.message })
@@ -128,8 +133,21 @@ export default function CartDrawer() {
                       value={form.address}
                       onChange={(e) => setForm({ ...form, address: e.target.value })}
                     />
-                    <button className="btn btn-primary btn-block" disabled={submitting}>
-                      {submitting ? t.cart.placing : `${t.cart.placeOrder} · $${total.toFixed(2)}`}
+                    <button
+                      type="submit"
+                      value="card"
+                      className="btn btn-primary btn-block"
+                      disabled={submitting}
+                    >
+                      {submitting ? t.cart.placing : `${t.cart.payCard} · $${total.toFixed(2)}`}
+                    </button>
+                    <button
+                      type="submit"
+                      value="cod"
+                      className="btn btn-ghost btn-block"
+                      disabled={submitting}
+                    >
+                      {t.cart.payDelivery}
                     </button>
                   </form>
                 )}

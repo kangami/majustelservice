@@ -19,7 +19,7 @@ const MAX_IMAGES = 5
 
 const ICONS = ['laptop', 'mouse', 'keyboard', 'dock', 'bag', 'ssd', 'ram', 'fan', 'charger', 'monitor', 'webcam']
 const SERVICE_ICONS = ['wrench', 'search', 'shield', 'screen', 'chip', 'database', 'os', 'fan', 'briefcase', 'laptop']
-const STATUSES = ['new', 'processing', 'shipped', 'completed', 'cancelled']
+const STATUSES = ['new', 'awaiting_payment', 'paid', 'processing', 'shipped', 'completed', 'cancelled']
 
 const EMPTY_SERVICE = {
   name: '', description: '', price_from: 0, duration: '', icon: 'wrench',
@@ -513,6 +513,7 @@ function OrdersAdmin() {
                 <th>{t.admin.customer}</th>
                 <th>{t.admin.items}</th>
                 <th>{t.admin.totalCol}</th>
+                <th>{t.admin.payment}</th>
                 <th>{t.admin.date}</th>
                 <th>{t.admin.status}</th>
               </tr>
@@ -528,6 +529,7 @@ function OrdersAdmin() {
                   </td>
                   <td className="table-items">{o.items}</td>
                   <td><strong>${o.total.toFixed(2)}</strong></td>
+                  <td><span className="tag">{t.payments[o.payment_method] || o.payment_method || '—'}</span></td>
                   <td className="muted">{o.created_at.replace('T', ' ')}</td>
                   <td>
                     <select
