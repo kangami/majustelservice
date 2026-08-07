@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useLang } from '../LanguageContext.jsx'
 import { createRentalCheckout } from '../api.js'
 import Icon from './Icons.jsx'
@@ -57,7 +58,9 @@ export default function RentalModal({ product, onClose }) {
     }
   }
 
-  return (
+  // Portal to <body>: the product card's hover transform would otherwise
+  // trap this fixed-position overlay inside the card.
+  return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal card" onClick={(e) => e.stopPropagation()}>
         <div className="drawer-header modal-header">
@@ -125,6 +128,7 @@ export default function RentalModal({ product, onClose }) {
           </button>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
