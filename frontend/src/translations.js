@@ -22,8 +22,8 @@ export const translations = {
       cardSub: 'Sales · Repairs · Upgrades',
     },
     perks: [
-      { title: 'Fast Delivery', text: 'Free shipping on orders over $99, delivered in 2–4 days.' },
-      { title: '2-Year Warranty', text: 'Every laptop covered by a full parts & labour warranty.' },
+      { title: 'Fast Delivery', text: 'Free shipping on orders over $500, delivered in 2–4 days.' },
+      { title: '180-Day Warranty', text: 'Every laptop covered by a full parts & labour warranty.' },
       { title: 'Expert Repairs', text: 'Certified technicians for maintenance and upgrades.' },
       { title: 'Trusted Advice', text: 'Honest recommendations matched to your budget.' },
     ],
@@ -221,8 +221,8 @@ export const translations = {
       cardSub: 'Vente · Réparations · Mises à niveau',
     },
     perks: [
-      { title: 'Livraison rapide', text: 'Livraison gratuite dès 99 $ d\'achat, livrée en 2 à 4 jours.' },
-      { title: 'Garantie 2 ans', text: 'Chaque portable couvert par une garantie complète pièces et main-d\'œuvre.' },
+      { title: 'Livraison rapide', text: 'Livraison gratuite dès 500 $ d\'achat, livrée en 2 à 4 jours.' },
+      { title: 'Garantie 180 jours', text: 'Chaque portable couvert par une garantie complète pièces et main-d\'œuvre.' },
       { title: 'Réparations expertes', text: 'Techniciens certifiés pour l\'entretien et les mises à niveau.' },
       { title: 'Conseils de confiance', text: 'Des recommandations honnêtes adaptées à votre budget.' },
     ],
