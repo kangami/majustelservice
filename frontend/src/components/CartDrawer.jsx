@@ -3,6 +3,7 @@ import { useCart } from '../CartContext.jsx'
 import { useLang } from '../LanguageContext.jsx'
 import { placeOrder, createCheckoutSession } from '../api.js'
 import { coverImage } from '../imageUtils.js'
+import AddressInput from './AddressInput.jsx'
 import Icon from './Icons.jsx'
 
 export default function CartDrawer() {
@@ -126,12 +127,11 @@ export default function CartDrawer() {
                       value={form.phone}
                       onChange={(e) => setForm({ ...form, phone: e.target.value })}
                     />
-                    <textarea
+                    <AddressInput
                       required
-                      rows={2}
                       placeholder={t.cart.address}
                       value={form.address}
-                      onChange={(e) => setForm({ ...form, address: e.target.value })}
+                      onChange={(v) => setForm((prev) => ({ ...prev, address: v }))}
                     />
                     <button
                       type="submit"

@@ -568,6 +568,52 @@ main {
   margin-top: 10px;
 }
 
+/* ---------- Address autocomplete ---------- */
+.address-input {
+  position: relative;
+}
+
+.address-input input {
+  width: 100%;
+}
+
+.address-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  z-index: 20;
+  overflow: hidden;
+}
+
+.address-suggestions button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 10px 14px;
+  font-size: 0.88rem;
+  color: var(--black);
+  transition: background 0.12s;
+}
+
+.address-suggestions button:hover {
+  background: var(--blue-soft);
+}
+
+.address-attribution {
+  padding: 4px 14px 6px;
+  font-size: 0.68rem;
+  color: var(--gray-500);
+  text-align: right;
+  border-top: 1px solid var(--gray-100);
+}
+
 /* ---------- Rental modal ---------- */
 .rental-product {
   display: flex;

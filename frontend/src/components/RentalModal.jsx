@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLang } from '../LanguageContext.jsx'
 import { createRentalCheckout } from '../api.js'
+import AddressInput from './AddressInput.jsx'
 import Icon from './Icons.jsx'
 
 export default function RentalModal({ product, onClose }) {
@@ -101,7 +102,12 @@ export default function RentalModal({ product, onClose }) {
           {datesInvalid && <div className="alert alert-error">{t.rental.invalidDates}</div>}
           <label>
             {t.rental.location}
-            <input required placeholder={t.rental.locationPlaceholder} value={form.location} onChange={set('location')} />
+            <AddressInput
+              required
+              placeholder={t.rental.locationPlaceholder}
+              value={form.location}
+              onChange={(v) => setForm((prev) => ({ ...prev, location: v }))}
+            />
           </label>
           <div className="form-row">
             <label>
