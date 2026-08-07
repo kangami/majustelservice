@@ -24,6 +24,9 @@ export const createCheckoutSession = (payload) =>
 export const verifyCheckout = (sessionId) =>
   request(`/checkout/verify?session_id=${encodeURIComponent(sessionId)}`)
 
+export const createRentalCheckout = (payload) =>
+  request('/rentals/checkout', { method: 'POST', body: JSON.stringify(payload) })
+
 export const sendMessage = (payload) =>
   request('/contact', { method: 'POST', body: JSON.stringify(payload) })
 

@@ -2,15 +2,18 @@ import { useState } from 'react'
 import { useCart } from '../CartContext.jsx'
 import { useLang } from '../LanguageContext.jsx'
 import { productImages } from '../imageUtils.js'
+import RentalModal from './RentalModal.jsx'
 import Icon from './Icons.jsx'
 
 export default function ProductCard({ product }) {
   const { addItem } = useCart()
   const { t } = useLang()
   const [hover, setHover] = useState(false)
+  const [renting, setRenting] = useState(false)
 
   const imgs = productImages(product)
   const src = hover && imgs[1] ? imgs[1] : imgs[0]
+  const rentable = product.rental_price > 0
 
   return (
     <article
@@ -46,7 +49,13 @@ export default function ProductCard({ product }) {
             <Icon name="cart" size={16} /> {t.shop.add}
           </button>
         </div>
+        {rentable && (
+          <button className="btn btn-outline btn-sm btn-block rent-button" onClick={() => setRenting(true)}>
+            <Icon name="clock" size={15} /> {t.rental.rent} · ${product.rental_price.toFixed(2)}{t.rental.perHour}
+          </button>
+        )}
       </div>
+      {renting && <RentalModal product={product} onClose={() => setRenting(false)} />}
     </article>
   )
 }

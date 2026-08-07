@@ -12,7 +12,7 @@ import Icon from '../components/Icons.jsx'
 
 const EMPTY_PRODUCT = {
   name: '', brand: '', category: 'laptops', price: '', old_price: '',
-  stock: 10, badge: '', icon: 'laptop', specs: '',
+  rental_price: '', stock: 10, badge: '', icon: 'laptop', specs: '',
   description: '', description_fr: '',
 }
 const MAX_IMAGES = 5
@@ -129,6 +129,7 @@ function ProductsAdmin() {
                 <td>
                   ${p.price.toFixed(2)}
                   {p.old_price && <span className="muted table-sub">{t.admin.was} ${p.old_price.toFixed(2)}</span>}
+                  {p.rental_price > 0 && <span className="muted table-sub">{t.admin.rentalTag}: ${p.rental_price.toFixed(2)}/h</span>}
                 </td>
                 <td>{p.stock}</td>
                 <td>{p.badge ? (t.badges[p.badge] || p.badge) : '—'}</td>
@@ -207,7 +208,11 @@ function ProductModal({ product, onClose, onSaved }) {
     e.preventDefault()
     setSaving(true)
     setError(null)
-    const payload = { ...form, old_price: form.old_price === '' ? null : form.old_price }
+    const payload = {
+      ...form,
+      old_price: form.old_price === '' ? null : form.old_price,
+      rental_price: form.rental_price === '' ? null : form.rental_price,
+    }
     delete payload.id
     delete payload.image // backend derives the cover from images[0]
     try {
@@ -264,6 +269,7 @@ function ProductModal({ product, onClose, onSaved }) {
             <label>{t.admin.stock}<input type="number" min="0" value={form.stock} onChange={set('stock')} /></label>
             <label>{t.admin.badge}<input placeholder="Sale, New, Popular…" value={form.badge} onChange={set('badge')} /></label>
           </div>
+          <label>{t.admin.rentalPrice}<input type="number" step="0.01" min="0" value={form.rental_price} onChange={set('rental_price')} /></label>
           <div className="image-manager">
             <span className="field-label">{t.admin.images}</span>
             <div className="image-grid">
@@ -529,7 +535,10 @@ function OrdersAdmin() {
                   </td>
                   <td className="table-items">{o.items}</td>
                   <td><strong>${o.total.toFixed(2)}</strong></td>
-                  <td><span className="tag">{t.payments[o.payment_method] || o.payment_method || '—'}</span></td>
+                  <td>
+                    <span className="tag">{t.payments[o.payment_method] || o.payment_method || '—'}</span>
+                    {o.order_type === 'rental' && <span className="tag tag-rental">{t.admin.rentalTag}</span>}
+                  </td>
                   <td className="muted">{o.created_at.replace('T', ' ')}</td>
                   <td>
                     <select

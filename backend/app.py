@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import sqlite3
 from datetime import datetime
@@ -102,7 +103,8 @@ CREATE TABLE IF NOT EXISTS products (
     icon TEXT NOT NULL DEFAULT 'laptop',
     image TEXT,
     description_fr TEXT,
-    images TEXT
+    images TEXT,
+    rental_price REAL
 );
 
 CREATE TABLE IF NOT EXISTS services (
@@ -128,6 +130,9 @@ CREATE TABLE IF NOT EXISTS orders (
     status TEXT NOT NULL DEFAULT 'new',
     payment_method TEXT DEFAULT 'cod',
     stripe_session_id TEXT,
+    order_type TEXT DEFAULT 'purchase',
+    rental_start TEXT,
+    rental_end TEXT,
     created_at TEXT NOT NULL
 );
 
@@ -303,13 +308,21 @@ def init_db():
 
     migrations_pg = [
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS images TEXT",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS rental_price REAL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'cod'",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_session_id TEXT",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_type TEXT DEFAULT 'purchase'",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS rental_start TEXT",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS rental_end TEXT",
     ]
     migrations_sqlite = [
         "ALTER TABLE products ADD COLUMN images TEXT",
+        "ALTER TABLE products ADD COLUMN rental_price REAL",
         "ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT 'cod'",
         "ALTER TABLE orders ADD COLUMN stripe_session_id TEXT",
+        "ALTER TABLE orders ADD COLUMN order_type TEXT DEFAULT 'purchase'",
+        "ALTER TABLE orders ADD COLUMN rental_start TEXT",
+        "ALTER TABLE orders ADD COLUMN rental_end TEXT",
     ]
     if IS_POSTGRES:
         cur.execute(SCHEMA)
@@ -333,6 +346,13 @@ def init_db():
         cur.executemany(
             "INSERT INTO products (name, category, brand, price, old_price, description, specs,"
             f" stock, badge, icon, image, description_fr) VALUES ({marks})", PRODUCTS)
+        rental_rates = {
+            "ProBook Ultra 14": 8, "XPS 15 Creator": 12, "MacBook Air M3": 10,
+            "ThinkPad X1 Carbon": 10, "ROG Zephyrus G14": 15, "Aspire 5 Essential": 5,
+            "Galaxy Book4 Pro": 10, "Pavilion 15": 6,
+        }
+        for name, rate in rental_rates.items():
+            cur.execute(f"UPDATE products SET rental_price = {ph} WHERE name = {ph}", (rate, name))
     if count("services") == 0:
         marks = ",".join([ph] * 8)
         cur.executemany(
@@ -408,7 +428,7 @@ def me():
 
 PRODUCT_FIELDS = ["name", "category", "brand", "price", "old_price",
                   "description", "specs", "stock", "badge", "icon", "image",
-                  "description_fr", "images"]
+                  "description_fr", "images", "rental_price"]
 ORDER_STATUSES = ["new", "awaiting_payment", "paid", "processing", "shipped",
                   "completed", "cancelled"]
 MAX_IMAGES = 5
@@ -433,7 +453,7 @@ def product_payload(data, partial=False):
         for field in ["name", "category", "brand", "price"]:
             if not str(data.get(field, "")).strip():
                 errors.append(field)
-    for num_field in ["price", "old_price"]:
+    for num_field in ["price", "old_price", "rental_price"]:
         if values.get(num_field) not in (None, ""):
             try:
                 values[num_field] = float(values[num_field])
@@ -716,6 +736,79 @@ def create_checkout_session():
                (checkout.id, order_id))
     get_db().commit()
     return jsonify({"url": checkout.url})
+
+
+@app.post("/api/rentals/checkout")
+def rental_checkout():
+    if not STRIPE_SECRET_KEY:
+        return jsonify({"error": "Card payment is not configured"}), 503
+    data = request.get_json(silent=True) or {}
+    required = ["customer_name", "email", "location", "start", "end", "product_id"]
+    missing = [f for f in required if not str(data.get(f, "")).strip()]
+    if missing:
+        return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
+
+    product = fetch_one("SELECT * FROM products WHERE id = ?", (data["product_id"],))
+    if product is None:
+        return jsonify({"error": "Product not found"}), 404
+    rate = product["rental_price"] or 0
+    if rate <= 0:
+        return jsonify({"error": "This product is not available for rent"}), 400
+
+    try:
+        qty = max(1, int(data.get("qty", 1)))
+        start = datetime.fromisoformat(str(data["start"]))
+        end = datetime.fromisoformat(str(data["end"]))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid dates or quantity"}), 400
+    if end <= start:
+        return jsonify({"error": "End must be after start"}), 400
+
+    hours = max(1, math.ceil((end - start).total_seconds() / 3600))
+    total = round(rate * hours * qty, 2)
+    start_s = start.isoformat(timespec="minutes")
+    end_s = end.isoformat(timespec="minutes")
+    items_line = (f"RENTAL {product['name']} x{qty} @ {rate:.2f}/h × {hours}h"
+                  f" · {start_s} → {end_s}")
+
+    order_id = insert_returning_id(
+        "INSERT INTO orders (customer_name, email, phone, address, items, total, status,"
+        " payment_method, order_type, rental_start, rental_end, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (data["customer_name"], data["email"], data.get("phone", ""),
+         data["location"], items_line, total, "awaiting_payment", "card",
+         "rental", start_s, end_s,
+         datetime.utcnow().isoformat(timespec="seconds")))
+    get_db().commit()
+
+    base = frontend_base_url()
+    try:
+        checkout = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=[{
+                "price_data": {
+                    "currency": "cad",
+                    "product_data": {
+                        "name": f"Rental: {product['name']} ({hours}h × {qty})",
+                    },
+                    "unit_amount": int(round(rate * hours * 100)),
+                },
+                "quantity": qty,
+            }],
+            customer_email=data["email"],
+            metadata={"order_id": str(order_id), "type": "rental"},
+            success_url=f"{base}/checkout/success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{base}/checkout/cancel",
+        )
+    except Exception as exc:
+        db_execute("DELETE FROM orders WHERE id = ?", (order_id,))
+        get_db().commit()
+        return jsonify({"error": f"Payment provider error: {exc}"}), 502
+
+    db_execute("UPDATE orders SET stripe_session_id = ? WHERE id = ?",
+               (checkout.id, order_id))
+    get_db().commit()
+    return jsonify({"url": checkout.url, "total": total, "hours": hours})
 
 
 @app.get("/api/checkout/verify")

@@ -564,6 +564,44 @@ main {
   flex-direction: column;
 }
 
+.rent-button {
+  margin-top: 10px;
+}
+
+/* ---------- Rental modal ---------- */
+.rental-product {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--blue-soft);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.rental-rate {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--blue-dark);
+}
+
+.rental-estimate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-100);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  font-size: 0.9rem;
+}
+
+.rental-estimate strong {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+}
+
 .price {
   font-family: var(--font-display);
   font-weight: 700;
@@ -1228,6 +1266,12 @@ main {
   font-weight: 600;
   padding: 3px 10px;
   border-radius: 999px;
+}
+
+.tag-rental {
+  background: #ede9fe;
+  color: #5b21b6;
+  margin-left: 4px;
 }
 
 .status-select {
