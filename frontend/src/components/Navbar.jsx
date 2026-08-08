@@ -14,6 +14,7 @@ export default function Navbar() {
   const links = [
     { to: '/', label: t.nav.home, end: true },
     { to: '/shop', label: t.nav.shop },
+    { to: '/rentals', label: t.nav.rentals },
     { to: '/services', label: t.nav.services },
     { to: '/contact', label: t.nav.contact },
   ]

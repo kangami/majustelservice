@@ -191,7 +191,13 @@ main {
   font-weight: 500;
   font-size: 0.95rem;
   color: var(--gray-700);
+  white-space: nowrap;
   transition: all 0.2s;
+}
+
+/* Five links plus the brand and actions get tight before the burger kicks in. */
+@media (max-width: 1060px) {
+  .nav-link { padding: 8px 11px; font-size: 0.9rem; }
 }
 
 .nav-link:hover { color: var(--blue); }
@@ -445,7 +451,8 @@ main {
 .perk p { font-size: 0.88rem; color: var(--gray-500); }
 
 /* ---------- Rental band ---------- */
-.rental-band {
+.rental-band,
+.rental-teaser-section {
   position: relative;
   overflow: hidden;
   color: var(--white);
@@ -455,7 +462,8 @@ main {
     var(--black);
 }
 
-.rental-band::before {
+.rental-band::before,
+.rental-teaser-section::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -786,6 +794,68 @@ main {
   color: #7c8ba3;
   text-align: center;
 }
+
+/* ---------- Rental teaser (home) ---------- */
+.rental-teaser-section { padding: 52px 0; }
+
+.rental-teaser {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.rental-teaser h2 {
+  color: var(--white);
+  font-size: clamp(1.4rem, 2.6vw, 1.9rem);
+  margin-bottom: 8px;
+}
+
+.rental-teaser p {
+  color: #9db0c9;
+  max-width: 520px;
+  font-size: 0.95rem;
+}
+
+.rental-teaser-action {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+
+.rental-teaser-price {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.rental-teaser-price em {
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #9fcaf3;
+}
+
+.rental-teaser-price strong {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.rental-teaser-price i {
+  font-style: normal;
+  font-size: 0.95rem;
+  color: #9db0c9;
+}
+
+/* ---------- Rentals page ---------- */
+.page-head-wide { max-width: 780px; }
+.page-head-wide .muted { font-size: 1.02rem; }
 
 /* ---------- Products ---------- */
 .product-grid {

@@ -36,7 +36,7 @@ export default function CartDrawer() {
       const res = await placeOrder(payload)
       clearCart()
       setCheckout(false)
-      setStatus({ type: 'success', text: `Order #${res.order_id} — $${res.total.toFixed(2)}. ${res.message}` })
+      setStatus({ type: 'success', text: `Order #${res.order_id} for $${res.total.toFixed(2)}. ${res.message}` })
       setForm({ customer_name: '', email: '', phone: '', address: '' })
     } catch (err) {
       setStatus({ type: 'error', text: err.message })

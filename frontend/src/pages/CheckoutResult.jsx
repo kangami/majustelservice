@@ -36,7 +36,7 @@ export default function CheckoutResult() {
     verifying: { icon: 'clock', cls: '', title: t.checkout.verifying, text: '' },
     success: {
       icon: 'check', cls: 'result-success', title: t.checkout.successTitle,
-      text: `${orderId ? `${t.checkout.orderNumber} #${orderId} — ` : ''}${t.checkout.successText}`,
+      text: `${orderId ? `${t.checkout.orderNumber} #${orderId}. ` : ''}${t.checkout.successText}`,
     },
     cancelled: { icon: 'x', cls: 'result-cancel', title: t.checkout.cancelTitle, text: t.checkout.cancelText },
     failed: { icon: 'x', cls: 'result-cancel', title: t.checkout.failTitle, text: t.checkout.failText },

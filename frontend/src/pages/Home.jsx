@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { getProducts, getServices } from '../api.js'
 import { useLang } from '../LanguageContext.jsx'
 import ProductCard from '../components/ProductCard.jsx'
-import RentalPlanner from '../components/RentalPlanner.jsx'
 import Icon from '../components/Icons.jsx'
 
 const PERK_ICONS = ['truck', 'shield', 'wrench', 'star']
@@ -11,13 +10,14 @@ const PERK_ICONS = ['truck', 'shield', 'wrench', 'star']
 export default function Home() {
   const { t, loc } = useLang()
   const [featured, setFeatured] = useState([])
-  const [rentals, setRentals] = useState([])
+  const [rentalFrom, setRentalFrom] = useState(null)
   const [services, setServices] = useState([])
 
   useEffect(() => {
     getProducts().then((all) => {
       setFeatured(all.filter((p) => p.badge).slice(0, 4))
-      setRentals(all.filter((p) => p.rental_price > 0))
+      const rates = all.filter((p) => p.rental_price > 0).map((p) => p.rental_price)
+      setRentalFrom(rates.length ? Math.min(...rates) : null)
     }).catch(() => {})
     getServices().then((s) => setServices(s.slice(0, 4))).catch(() => {})
   }, [])
@@ -75,8 +75,29 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Rentals */}
-      <RentalPlanner fleet={rentals} />
+      {/* Rentals teaser */}
+      {rentalFrom !== null && (
+        <section className="section rental-teaser-section">
+          <div className="container rental-teaser">
+            <div>
+              <span className="rental-eyebrow">
+                <Icon name="clock" size={14} /> {t.rentalTeaser.eyebrow}
+              </span>
+              <h2>{t.rentalTeaser.title}</h2>
+              <p>{t.rentalTeaser.text}</p>
+            </div>
+            <div className="rental-teaser-action">
+              <span className="rental-teaser-price">
+                <em>{t.rentalTeaser.from}</em>
+                <strong>${rentalFrom.toFixed(2)}<i>{t.rental.perHour}</i></strong>
+              </span>
+              <Link to="/rentals" className="btn btn-primary btn-lg">
+                {t.rentalTeaser.btn} <Icon name="laptop" size={18} />
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Featured products */}
       <section className="section">
