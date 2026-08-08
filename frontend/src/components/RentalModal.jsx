@@ -5,10 +5,10 @@ import { createRentalCheckout } from '../api.js'
 import AddressInput from './AddressInput.jsx'
 import Icon from './Icons.jsx'
 
-export default function RentalModal({ product, onClose }) {
+export default function RentalModal({ product, initialQty = 1, onClose }) {
   const { t } = useLang()
   const [form, setForm] = useState({
-    qty: 1,
+    qty: initialQty,
     start: '',
     end: '',
     location: '',

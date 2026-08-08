@@ -24,6 +24,7 @@ export default function Footer() {
           <ul className="footer-list">
             <li><Link to="/shop">{t.footer.laptops}</Link></li>
             <li><Link to="/shop">{t.footer.accessories}</Link></li>
+            <li><a href="/#rentals">{t.footer.rentals}</a></li>
             <li><Link to="/services">{t.footer.maintenance}</Link></li>
             <li><Link to="/contact">{t.footer.contactUs}</Link></li>
           </ul>

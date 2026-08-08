@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { getProducts, getServices } from '../api.js'
 import { useLang } from '../LanguageContext.jsx'
 import ProductCard from '../components/ProductCard.jsx'
+import RentalPlanner from '../components/RentalPlanner.jsx'
 import Icon from '../components/Icons.jsx'
 
 const PERK_ICONS = ['truck', 'shield', 'wrench', 'star']
@@ -10,10 +11,14 @@ const PERK_ICONS = ['truck', 'shield', 'wrench', 'star']
 export default function Home() {
   const { t, loc } = useLang()
   const [featured, setFeatured] = useState([])
+  const [rentals, setRentals] = useState([])
   const [services, setServices] = useState([])
 
   useEffect(() => {
-    getProducts().then((all) => setFeatured(all.filter((p) => p.badge).slice(0, 4))).catch(() => {})
+    getProducts().then((all) => {
+      setFeatured(all.filter((p) => p.badge).slice(0, 4))
+      setRentals(all.filter((p) => p.rental_price > 0))
+    }).catch(() => {})
     getServices().then((s) => setServices(s.slice(0, 4))).catch(() => {})
   }, [])
 
@@ -69,6 +74,9 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      {/* Rentals */}
+      <RentalPlanner fleet={rentals} />
 
       {/* Featured products */}
       <section className="section">
