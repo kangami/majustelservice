@@ -25,9 +25,6 @@ export function ManifestCard({ lot, onClose }) {
             <strong>{name}</strong>
             <span className="muted">{loc(lot, 'description')}</span>
           </div>
-          <span className={`lot-grade lot-grade-${lot.grade}`}>
-            {copy.grades[lot.grade] || lot.grade}
-          </span>
         </div>
 
         <div className="table-wrap">
@@ -36,6 +33,7 @@ export function ManifestCard({ lot, onClose }) {
               <tr>
                 <th>{copy.colModel}</th>
                 <th>{copy.colSpecs}</th>
+                <th>{copy.colGrade}</th>
                 <th className="num">{copy.colQty}</th>
                 <th className="num">{copy.colUnit}</th>
                 <th className="num">{copy.colSubtotal}</th>
@@ -46,13 +44,22 @@ export function ManifestCard({ lot, onClose }) {
                 <tr key={item.id}>
                   <td>
                     <div className="table-product">
-                      <span className="table-thumb table-thumb-icon">
-                        <Icon name={item.icon || 'laptop'} size={18} />
-                      </span>
+                      {item.image ? (
+                        <img src={item.image} alt="" className="table-thumb" />
+                      ) : (
+                        <span className="table-thumb table-thumb-icon">
+                          <Icon name={item.icon || 'laptop'} size={18} />
+                        </span>
+                      )}
                       <strong>{item.name}</strong>
                     </div>
                   </td>
                   <td className="manifest-specs">{item.specs}</td>
+                  <td>
+                    <span className={`lot-grade lot-grade-${item.grade}`}>
+                      {copy.grades[item.grade] || item.grade}
+                    </span>
+                  </td>
                   <td className="num"><strong>{item.qty}</strong></td>
                   <td className="num">{item.unit_value ? money(item.unit_value, lang, 2) : '·'}</td>
                   <td className="num">{item.subtotal ? money(item.subtotal, lang) : '·'}</td>
@@ -61,7 +68,7 @@ export function ManifestCard({ lot, onClose }) {
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={2}>{copy.totalUnits}</td>
+                <td colSpan={3}>{copy.totalUnits}</td>
                 <td className="num"><strong>{lot.unit_count}</strong></td>
                 <td className="num">{copy.retail}</td>
                 <td className="num">{money(lot.retail_value, lang)}</td>

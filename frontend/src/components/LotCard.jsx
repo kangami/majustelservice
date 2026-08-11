@@ -4,22 +4,10 @@ import { money } from '../format.js'
 import LotManifest from './LotManifest.jsx'
 import Icon from './Icons.jsx'
 
-// One glyph per machine, capped so a 30 unit lot still fits on the card.
-const MAX_GLYPHS = 28
-
 export default function LotCard({ lot }) {
   const { t, lang, loc } = useLang()
   const copy = t.lots
   const [open, setOpen] = useState(false)
-
-  // Each model gets its own tone, so the grid reads as the composition of the lot.
-  const glyphs = []
-  lot.items.forEach((item, index) => {
-    for (let i = 0; i < item.qty && glyphs.length < MAX_GLYPHS; i += 1) {
-      glyphs.push({ key: `${item.id}-${i}`, tone: index % 4, icon: item.icon || 'laptop' })
-    }
-  })
-  const overflow = lot.unit_count - glyphs.length
 
   const discount = lot.retail_value
     ? Math.round(((lot.retail_value - lot.price) / lot.retail_value) * 100)
@@ -27,30 +15,30 @@ export default function LotCard({ lot }) {
 
   return (
     <article className={`lot-card lot-${lot.status}`}>
-      <div className="lot-card-head">
-        <span className={`lot-grade lot-grade-${lot.grade}`}>{copy.grades[lot.grade] || lot.grade}</span>
-        {lot.status !== 'available' && (
+      {lot.status !== 'available' && (
+        <div className="lot-card-head">
           <span className="lot-status">{copy.statuses[lot.status] || lot.status}</span>
-        )}
-      </div>
+        </div>
+      )}
 
       <h3>{loc(lot, 'name')}</h3>
       <p className="lot-desc">{loc(lot, 'description')}</p>
 
-      <div className="lot-grid" aria-hidden="true">
-        {glyphs.map((g) => (
-          <span key={g.key} className={`lot-unit lot-tone-${g.tone}`}>
-            <Icon name={g.icon} size={13} strokeWidth={2} />
-          </span>
-        ))}
-        {overflow > 0 && <span className="lot-unit lot-unit-more">+{overflow}</span>}
-      </div>
-
-      <ul className="lot-legend">
-        {lot.items.map((item, index) => (
-          <li key={item.id}>
-            <i className={`lot-dot lot-tone-${index % 4}`} />
-            <strong>{item.qty}×</strong> {item.name}
+      <ul className="lot-machines">
+        {lot.items.map((item) => (
+          <li key={item.id} className="lot-machine">
+            <span className="lot-machine-photo">
+              {item.image
+                ? <img src={item.image} alt={item.name} loading="lazy" />
+                : <Icon name={item.icon || 'laptop'} size={26} strokeWidth={1.4} />}
+            </span>
+            <span className="lot-machine-qty">{item.qty}×</span>
+            <span className="lot-machine-text">
+              <strong>{item.name}</strong>
+              <em className={`lot-grade lot-grade-${item.grade}`}>
+                {copy.grades[item.grade] || item.grade}
+              </em>
+            </span>
           </li>
         ))}
       </ul>

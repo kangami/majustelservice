@@ -32,7 +32,7 @@ const LOT_STATUSES = ['available', 'reserved', 'sold']
 
 const EMPTY_LOT = {
   name: '', name_fr: '', description: '', description_fr: '', price: '',
-  grade: 'refurbished', badge: '', status: 'available', lead_time: '', lead_time_fr: '',
+  badge: '', status: 'available', lead_time: '', lead_time_fr: '',
 }
 
 export default function Admin() {
@@ -607,11 +607,14 @@ function LotModal({ lot, onClose, onSaved }) {
     name: i.name,
     specs: i.specs || '',
     icon: i.icon || 'laptop',
+    image: i.image || null,
+    grade: i.grade || 'refurbished',
     qty: i.qty,
     unit_value: i.unit_value ?? '',
   })))
   const [catalog, setCatalog] = useState([])
-  const [pick, setPick] = useState({ product_id: '', qty: 1 })
+  const [pick, setPick] = useState({ product_id: '', qty: 1, grade: 'refurbished' })
+  const [discount, setDiscount] = useState(30)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
 
@@ -626,7 +629,8 @@ function LotModal({ lot, onClose, onSaved }) {
     const product = catalog.find((p) => String(p.id) === String(pick.product_id))
     if (!product) return
     const qty = Math.max(1, parseInt(pick.qty, 10) || 1)
-    const existing = items.find((i) => String(i.product_id) === String(product.id))
+    const existing = items.find(
+      (i) => String(i.product_id) === String(product.id) && i.grade === pick.grade)
     if (existing) {
       setItem(existing.key, 'qty', Number(existing.qty) + qty)
     } else {
@@ -637,11 +641,13 @@ function LotModal({ lot, onClose, onSaved }) {
         name: product.name,
         specs: product.specs || '',
         icon: product.icon || 'laptop',
+        image: coverImage(product),
+        grade: pick.grade,
         qty,
         unit_value: product.price,
       }])
     }
-    setPick({ product_id: '', qty: 1 })
+    setPick({ ...pick, product_id: '', qty: 1 })
   }
 
   const addCustom = () => {
@@ -652,6 +658,8 @@ function LotModal({ lot, onClose, onSaved }) {
       name: '',
       specs: '',
       icon: 'laptop',
+      image: null,
+      grade: 'refurbished',
       qty: 1,
       unit_value: '',
     }])
@@ -661,7 +669,8 @@ function LotModal({ lot, onClose, onSaved }) {
   const retail = items.reduce((sum, i) => sum + (parseInt(i.qty, 10) || 0) * (parseFloat(i.unit_value) || 0), 0)
   const price = parseFloat(form.price) || 0
   const unitPrice = unitCount ? price / unitCount : 0
-  const discount = retail ? Math.round(((retail - price) / retail) * 100) : 0
+  const appliedDiscount = retail ? Math.round(((retail - price) / retail) * 100) : 0
+  const suggested = retail * (1 - (parseFloat(discount) || 0) / 100)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -676,6 +685,7 @@ function LotModal({ lot, onClose, onSaved }) {
         name: i.name,
         specs: i.specs,
         icon: i.icon,
+        grade: i.grade,
         qty: parseInt(i.qty, 10) || 1,
         unit_value: i.unit_value === '' ? null : i.unit_value,
       })),
@@ -717,14 +727,6 @@ function LotModal({ lot, onClose, onSaved }) {
               <input required type="number" step="0.01" min="0" value={form.price} onChange={set('price')} />
             </label>
             <label>
-              {t.admin.grade}
-              <select value={form.grade} onChange={set('grade')}>
-                {LOT_GRADES.map((g) => <option key={g} value={g}>{t.lots.grades[g]}</option>)}
-              </select>
-            </label>
-          </div>
-          <div className="form-row">
-            <label>
               {t.admin.lotStatus}
               <select value={form.status} onChange={set('status')}>
                 {LOT_STATUSES.map((s) => <option key={s} value={s}>{t.lots.statuses[s]}</option>)}
@@ -763,6 +765,13 @@ function LotModal({ lot, onClose, onSaved }) {
                 onChange={(e) => setPick({ ...pick, qty: e.target.value })}
                 aria-label={t.admin.qty}
               />
+              <select
+                value={pick.grade}
+                onChange={(e) => setPick({ ...pick, grade: e.target.value })}
+                aria-label={t.admin.grade}
+              >
+                {LOT_GRADES.map((g) => <option key={g} value={g}>{t.lots.grades[g]}</option>)}
+              </select>
               <button type="button" className="btn btn-primary btn-sm" disabled={!pick.product_id} onClick={addFromCatalog}>
                 <Icon name="plus" size={15} /> {t.admin.addLine}
               </button>
@@ -775,12 +784,15 @@ function LotModal({ lot, onClose, onSaved }) {
 
             {items.map((item) => (
               <div key={item.key} className="lot-row">
+                {item.image ? (
+                  <img src={item.image} alt="" className="lot-row-photo" />
+                ) : (
+                  <span className="lot-row-photo lot-row-photo-icon"><Icon name={item.icon} size={18} /></span>
+                )}
                 <div className="lot-row-main">
                   {item.product_id ? (
                     <>
-                      <span className="lot-row-name">
-                        <Icon name={item.icon} size={16} /> {item.name}
-                      </span>
+                      <span className="lot-row-name">{item.name}</span>
                       <span className="muted lot-row-specs">{item.specs}</span>
                     </>
                   ) : (
@@ -799,6 +811,14 @@ function LotModal({ lot, onClose, onSaved }) {
                     </>
                   )}
                 </div>
+                <select
+                  className="lot-row-grade"
+                  value={item.grade}
+                  onChange={(e) => setItem(item.key, 'grade', e.target.value)}
+                  aria-label={t.admin.grade}
+                >
+                  {LOT_GRADES.map((g) => <option key={g} value={g}>{t.lots.grades[g]}</option>)}
+                </select>
                 <input
                   className="lot-row-qty"
                   type="number"
@@ -829,12 +849,36 @@ function LotModal({ lot, onClose, onSaved }) {
             ))}
 
             {items.length > 0 && (
-              <div className="lot-summary">
-                <div><span>{t.admin.sumUnits}</span><strong>{unitCount}</strong></div>
-                <div><span>{t.admin.sumRetail}</span><strong>${retail.toFixed(2)}</strong></div>
-                <div><span>{t.admin.sumUnitPrice}</span><strong>${unitPrice.toFixed(2)}</strong></div>
-                <div><span>{t.admin.sumMargin}</span><strong>{discount}%</strong></div>
-              </div>
+              <>
+                <div className="lot-summary">
+                  <div><span>{t.admin.sumUnits}</span><strong>{unitCount}</strong></div>
+                  <div><span>{t.admin.sumRetail}</span><strong>${retail.toFixed(2)}</strong></div>
+                  <div><span>{t.admin.sumUnitPrice}</span><strong>${unitPrice.toFixed(2)}</strong></div>
+                  <div><span>{t.admin.sumMargin}</span><strong>{appliedDiscount}%</strong></div>
+                </div>
+
+                {/* The lot price is a fixed number, so offer to recompute it from
+                    the manifest whenever the contents change. */}
+                <div className="lot-suggest">
+                  <span>{t.admin.suggestLabel}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="90"
+                    value={discount}
+                    onChange={(e) => setDiscount(e.target.value)}
+                    aria-label={t.admin.suggestDiscount}
+                  />
+                  <span>% → <strong>${suggested.toFixed(2)}</strong></span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setForm({ ...form, price: suggested.toFixed(2) })}
+                  >
+                    {t.admin.suggestApply}
+                  </button>
+                </div>
+              </>
             )}
           </div>
 

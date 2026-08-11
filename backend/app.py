@@ -159,7 +159,6 @@ CREATE TABLE IF NOT EXISTS lots (
     description TEXT,
     description_fr TEXT,
     price REAL NOT NULL,
-    grade TEXT NOT NULL DEFAULT 'refurbished',
     badge TEXT,
     status TEXT NOT NULL DEFAULT 'available',
     lead_time TEXT,
@@ -174,6 +173,7 @@ CREATE TABLE IF NOT EXISTS lot_items (
     name TEXT NOT NULL,
     specs TEXT,
     icon TEXT,
+    grade TEXT NOT NULL DEFAULT 'refurbished',
     qty INTEGER NOT NULL DEFAULT 1,
     unit_value REAL,
     position INTEGER NOT NULL DEFAULT 0
@@ -335,10 +335,10 @@ LOTS = [
                        "small business refresh or a first reseller order.",
         "description_fr": "Vingt postes bureautiques testés et prêts à déployer, idéals "
                           "pour renouveler une PME ou pour une première commande revendeur.",
-        "price": 8900.00, "grade": "grade_a", "badge": "Best Value",
+        "discount": 0.30, "badge": "Best Value",
         "lead_time": "Ships within 3 business days",
         "lead_time_fr": "Expédié sous 3 jours ouvrables",
-        "items": [("Aspire 5 Essential", 12), ("Pavilion 15", 8)],
+        "items": [("Aspire 5 Essential", 12, "grade_a"), ("Pavilion 15", 8, "refurbished")],
     },
     {
         "name": "Business Mobility Lot", "name_fr": "Lot Mobilité Affaires",
@@ -346,10 +346,10 @@ LOTS = [
                        "reinstalled and covered by our 180 day warranty.",
         "description_fr": "Douze ultraportables professionnels haut de gamme, chaque "
                           "appareil nettoyé, réinstallé et couvert par notre garantie 180 jours.",
-        "price": 12400.00, "grade": "grade_a", "badge": "Popular",
+        "discount": 0.30, "badge": "Popular",
         "lead_time": "Ships within 5 business days",
         "lead_time_fr": "Expédié sous 5 jours ouvrables",
-        "items": [("ThinkPad X1 Carbon", 6), ("ProBook Ultra 14", 6)],
+        "items": [("ThinkPad X1 Carbon", 6, "grade_a"), ("ProBook Ultra 14", 6, "grade_a")],
     },
     {
         "name": "Creative Studio Lot", "name_fr": "Lot Studio Créatif",
@@ -357,10 +357,11 @@ LOTS = [
                        "design work, sold as one turnkey batch.",
         "description_fr": "Neuf machines haute performance pour le montage, le rendu et "
                           "le design, vendues en un seul lot clé en main.",
-        "price": 10500.00, "grade": "new", "badge": "New",
+        "discount": 0.27, "badge": "New",
         "lead_time": "Ships within 7 business days",
         "lead_time_fr": "Expédié sous 7 jours ouvrables",
-        "items": [("XPS 15 Creator", 4), ("MacBook Air M3", 3), ("ROG Zephyrus G14", 2)],
+        "items": [("XPS 15 Creator", 4, "new"), ("MacBook Air M3", 3, "new"),
+                  ("ROG Zephyrus G14", 2, "new")],
     },
     {
         "name": "Full Deployment Lot", "name_fr": "Lot Déploiement Complet",
@@ -368,11 +369,12 @@ LOTS = [
                        "peripherals, so every desk is ready on day one.",
         "description_fr": "Dix postes livrés complets avec stations d'accueil et "
                           "périphériques, pour que chaque bureau soit prêt dès le premier jour.",
-        "price": 5600.00, "grade": "refurbished", "badge": None,
+        "discount": 0.30, "badge": None,
         "lead_time": "Ships within 3 business days",
         "lead_time_fr": "Expédié sous 3 jours ouvrables",
-        "items": [("Aspire 5 Essential", 10), ("USB-C Docking Station", 10),
-                  ("MX Master 3S Mouse", 10)],
+        "items": [("Aspire 5 Essential", 10, "refurbished"),
+                  ("USB-C Docking Station", 10, "new"),
+                  ("MX Master 3S Mouse", 10, "new")],
     },
 ]
 
@@ -390,6 +392,7 @@ def init_db():
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_type TEXT DEFAULT 'purchase'",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS rental_start TEXT",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS rental_end TEXT",
+        "ALTER TABLE lot_items ADD COLUMN IF NOT EXISTS grade TEXT NOT NULL DEFAULT 'refurbished'",
     ]
     migrations_sqlite = [
         "ALTER TABLE products ADD COLUMN images TEXT",
@@ -399,6 +402,7 @@ def init_db():
         "ALTER TABLE orders ADD COLUMN order_type TEXT DEFAULT 'purchase'",
         "ALTER TABLE orders ADD COLUMN rental_start TEXT",
         "ALTER TABLE orders ADD COLUMN rental_end TEXT",
+        "ALTER TABLE lot_items ADD COLUMN grade TEXT NOT NULL DEFAULT 'refurbished'",
     ]
     if IS_POSTGRES:
         cur.execute(SCHEMA)
@@ -436,24 +440,33 @@ def init_db():
             f" description_fr, duration_fr) VALUES ({marks})", SERVICES)
     if count("lots") == 0:
         for lot in LOTS:
-            cur.execute(
-                "INSERT INTO lots (name, name_fr, description, description_fr, price, grade,"
-                f" badge, status, lead_time, lead_time_fr, created_at) VALUES ({','.join([ph] * 11)})"
-                + (" RETURNING id" if IS_POSTGRES else ""),
-                (lot["name"], lot["name_fr"], lot["description"], lot["description_fr"],
-                 lot["price"], lot["grade"], lot["badge"], "available",
-                 lot["lead_time"], lot["lead_time_fr"], datetime.utcnow().isoformat()))
-            lot_id = cur.fetchone()["id"] if IS_POSTGRES else cur.lastrowid
-            for position, (product_name, qty) in enumerate(lot["items"]):
+            # Resolve the manifest first so the lot price follows its contents
+            # instead of being a constant that drifts the moment items change.
+            resolved = []
+            for position, (product_name, qty, grade) in enumerate(lot["items"]):
                 cur.execute(f"SELECT id, name, specs, icon, price FROM products WHERE name = {ph}",
                             (product_name,))
                 p = cur.fetchone()
-                if p is None:
-                    continue
+                if p is not None:
+                    resolved.append((p, qty, grade, position))
+            retail = sum(p["price"] * qty for p, qty, _, _ in resolved)
+            price = round(retail * (1 - lot["discount"]), -1)
+
+            cur.execute(
+                "INSERT INTO lots (name, name_fr, description, description_fr, price,"
+                f" badge, status, lead_time, lead_time_fr, created_at) VALUES ({','.join([ph] * 10)})"
+                + (" RETURNING id" if IS_POSTGRES else ""),
+                (lot["name"], lot["name_fr"], lot["description"], lot["description_fr"],
+                 price, lot["badge"], "available",
+                 lot["lead_time"], lot["lead_time_fr"], datetime.utcnow().isoformat()))
+            lot_id = cur.fetchone()["id"] if IS_POSTGRES else cur.lastrowid
+
+            for p, qty, grade, position in resolved:
                 cur.execute(
-                    "INSERT INTO lot_items (lot_id, product_id, name, specs, icon, qty,"
-                    f" unit_value, position) VALUES ({','.join([ph] * 8)})",
-                    (lot_id, p["id"], p["name"], p["specs"], p["icon"], qty, p["price"], position))
+                    "INSERT INTO lot_items (lot_id, product_id, name, specs, icon, grade, qty,"
+                    f" unit_value, position) VALUES ({','.join([ph] * 9)})",
+                    (lot_id, p["id"], p["name"], p["specs"], p["icon"], grade, qty,
+                     p["price"], position))
     if count("users") == 0:
         admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
         cur.execute(
@@ -692,21 +705,41 @@ def admin_delete_service(service_id):
 # ---------------------------------------------------------------------------
 
 LOT_FIELDS = ["name", "name_fr", "description", "description_fr", "price",
-              "grade", "badge", "status", "lead_time", "lead_time_fr"]
+              "badge", "status", "lead_time", "lead_time_fr"]
 LOT_GRADES = ["new", "grade_a", "refurbished"]
 LOT_STATUSES = ["available", "reserved", "sold"]
 MAX_LOT_ITEMS = 25
 
 
+def lot_item_covers(items):
+    """Cover photo per catalogue product, read live so it follows the product."""
+    ids = {i["product_id"] for i in items if i.get("product_id")}
+    if not ids:
+        return {}
+    marks = ", ".join("?" * len(ids))
+    rows = fetch_all(f"SELECT id, image, images FROM products WHERE id IN ({marks})", list(ids))
+    covers = {}
+    for row in rows:
+        try:
+            gallery = json.loads(row["images"] or "[]")
+        except (TypeError, ValueError):
+            gallery = []
+        covers[row["id"]] = (gallery[0] if gallery else None) or row["image"]
+    return covers
+
+
 def lot_to_dict(row):
     """Serialize a lot with its manifest and the figures a reseller compares on."""
     lot = dict(row)
+    lot.pop("grade", None)  # grade moved onto each machine; column may linger on old rows
     items = [dict(i) for i in fetch_all(
         "SELECT * FROM lot_items WHERE lot_id = ? ORDER BY position, id", (lot["id"],))]
+    covers = lot_item_covers(items)
     for item in items:
         item["qty"] = int(item["qty"] or 0)
         item["unit_value"] = float(item["unit_value"]) if item["unit_value"] is not None else None
         item["subtotal"] = round(item["qty"] * (item["unit_value"] or 0), 2)
+        item["image"] = covers.get(item.get("product_id"))
     unit_count = sum(i["qty"] for i in items)
     retail_value = round(sum(i["subtotal"] for i in items), 2)
     lot["items"] = items
@@ -758,6 +791,11 @@ def lot_items_payload(raw):
         specs = str(entry.get("specs") or (product["specs"] if product else "")).strip()
         icon = str(entry.get("icon") or (product["icon"] if product else "laptop")).strip()
 
+        grade = entry.get("grade") or "refurbished"
+        if grade not in LOT_GRADES:
+            errors.append(f"items[{position}].grade")
+            continue
+
         unit_value = entry.get("unit_value")
         if unit_value in (None, ""):
             unit_value = product["price"] if product else None
@@ -769,7 +807,7 @@ def lot_items_payload(raw):
                 continue
 
         items.append({"product_id": product_id, "name": name, "specs": specs, "icon": icon,
-                      "qty": qty, "unit_value": unit_value, "position": position})
+                      "grade": grade, "qty": qty, "unit_value": unit_value, "position": position})
     return items, errors
 
 
@@ -786,8 +824,6 @@ def lot_payload(data, partial=False):
             values["price"] = max(0.0, float(values["price"] or 0))
         except (TypeError, ValueError):
             errors.append("price")
-    if values.get("grade") not in (None, *LOT_GRADES):
-        errors.append("grade")
     if values.get("status") not in (None, *LOT_STATUSES):
         errors.append("status")
     return values, errors
@@ -797,10 +833,10 @@ def replace_lot_items(lot_id, items):
     db_execute("DELETE FROM lot_items WHERE lot_id = ?", (lot_id,))
     for item in items:
         db_execute(
-            "INSERT INTO lot_items (lot_id, product_id, name, specs, icon, qty, unit_value,"
-            " position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO lot_items (lot_id, product_id, name, specs, icon, grade, qty,"
+            " unit_value, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (lot_id, item["product_id"], item["name"], item["specs"], item["icon"],
-             item["qty"], item["unit_value"], item["position"]))
+             item["grade"], item["qty"], item["unit_value"], item["position"]))
 
 
 @app.get("/api/lots")
@@ -828,7 +864,6 @@ def admin_create_lot():
     errors += item_errors
     if errors:
         return jsonify({"error": f"Invalid or missing fields: {', '.join(errors)}"}), 400
-    values.setdefault("grade", "refurbished")
     values.setdefault("status", "available")
     values["created_at"] = datetime.utcnow().isoformat()
     cols = ", ".join(values.keys())
