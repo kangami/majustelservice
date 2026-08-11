@@ -15,6 +15,7 @@ export default function Navbar() {
     { to: '/', label: t.nav.home, end: true },
     { to: '/shop', label: t.nav.shop },
     { to: '/rentals', label: t.nav.rentals },
+    { to: '/lots', label: t.nav.lots },
     { to: '/services', label: t.nav.services },
     { to: '/contact', label: t.nav.contact },
   ]

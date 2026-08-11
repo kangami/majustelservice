@@ -5,6 +5,7 @@ import { useLang } from '../LanguageContext.jsx'
 import {
   getProducts, adminCreateProduct, adminUpdateProduct, adminDeleteProduct,
   getServices, adminCreateService, adminUpdateService, adminDeleteService,
+  getLots, adminCreateLot, adminUpdateLot, adminDeleteLot,
   adminGetOrders, adminUpdateOrder,
 } from '../api.js'
 import { productImages, coverImage, fileToDataUrl } from '../imageUtils.js'
@@ -24,6 +25,14 @@ const STATUSES = ['new', 'awaiting_payment', 'paid', 'processing', 'shipped', 'c
 const EMPTY_SERVICE = {
   name: '', description: '', price_from: 0, duration: '', icon: 'wrench',
   name_fr: '', description_fr: '', duration_fr: '',
+}
+
+const LOT_GRADES = ['new', 'grade_a', 'refurbished']
+const LOT_STATUSES = ['available', 'reserved', 'sold']
+
+const EMPTY_LOT = {
+  name: '', name_fr: '', description: '', description_fr: '', price: '',
+  grade: 'refurbished', badge: '', status: 'available', lead_time: '', lead_time_fr: '',
 }
 
 export default function Admin() {
@@ -55,6 +64,9 @@ export default function Admin() {
           <button className={`chip ${tab === 'services' ? 'chip-active' : ''}`} onClick={() => setTab('services')}>
             {t.admin.servicesTab}
           </button>
+          <button className={`chip ${tab === 'lots' ? 'chip-active' : ''}`} onClick={() => setTab('lots')}>
+            {t.admin.lotsTab}
+          </button>
           <button className={`chip ${tab === 'orders' ? 'chip-active' : ''}`} onClick={() => setTab('orders')}>
             {t.admin.orders}
           </button>
@@ -62,6 +74,7 @@ export default function Admin() {
 
         {tab === 'products' && <ProductsAdmin />}
         {tab === 'services' && <ServicesAdmin />}
+        {tab === 'lots' && <LotsAdmin />}
         {tab === 'orders' && <OrdersAdmin />}
       </div>
     </section>
@@ -478,6 +491,355 @@ function ServiceModal({ service, onClose, onSaved }) {
           <label>{t.admin.descriptionFr}<textarea rows={3} value={form.description_fr} onChange={set('description_fr')} /></label>
           <button className="btn btn-primary btn-block" disabled={saving}>
             {saving ? t.admin.saving : service ? t.admin.save : t.admin.createService}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+
+function LotsAdmin() {
+  const { t, loc } = useLang()
+  const [lots, setLots] = useState([])
+  const [editing, setEditing] = useState(null) // null | 'new' | lot object
+  const [status, setStatus] = useState(null)
+
+  const load = () => getLots().then(setLots).catch((e) => setStatus({ type: 'error', text: e.message }))
+  useEffect(() => { load() }, [])
+
+  const handleDelete = async (lot) => {
+    if (!window.confirm(t.admin.deleteConfirm.replace('{name}', lot.name))) return
+    try {
+      await adminDeleteLot(lot.id)
+      setStatus({ type: 'success', text: `${t.admin.deleted}: ${lot.name}` })
+      load()
+    } catch (e) {
+      setStatus({ type: 'error', text: e.message })
+    }
+  }
+
+  return (
+    <>
+      <div className="admin-toolbar">
+        {status && <div className={`alert alert-${status.type}`}>{status.text}</div>}
+        <button className="btn btn-primary" onClick={() => setEditing('new')}>
+          <Icon name="plus" size={16} /> {t.admin.addLot}
+        </button>
+      </div>
+
+      <div className="table-wrap">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>{t.admin.lot}</th>
+              <th>{t.admin.sumUnits}</th>
+              <th>{t.admin.price}</th>
+              <th>{t.admin.lotStatus}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {lots.map((lot) => (
+              <tr key={lot.id}>
+                <td>
+                  <div className="table-product">
+                    <span className="table-thumb table-thumb-icon"><Icon name="ram" size={20} /></span>
+                    <div>
+                      <strong>{loc(lot, 'name')}</strong>
+                      <span className="muted table-sub">
+                        {lot.items.map((i) => `${i.qty}× ${i.name}`).join(' · ')}
+                      </span>
+                    </div>
+                  </div>
+                </td>
+                <td>{lot.unit_count}</td>
+                <td>
+                  ${lot.price.toFixed(2)}
+                  {lot.unit_price != null && (
+                    <span className="muted table-sub">${lot.unit_price.toFixed(2)} / {t.admin.units}</span>
+                  )}
+                </td>
+                <td>
+                  <span className="tag">{t.lots.statuses[lot.status] || lot.status}</span>
+                </td>
+                <td>
+                  <div className="table-actions">
+                    <button className="icon-button" title={t.admin.editLot} onClick={() => setEditing(lot)}>
+                      <Icon name="wrench" size={16} />
+                    </button>
+                    <button className="icon-button remove" title={t.admin.deleted} onClick={() => handleDelete(lot)}>
+                      <Icon name="x" size={16} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {editing && (
+        <LotModal
+          lot={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={(msg) => { setEditing(null); setStatus({ type: 'success', text: msg }); load() }}
+        />
+      )}
+    </>
+  )
+}
+
+let lotRowKey = 0
+
+function LotModal({ lot, onClose, onSaved }) {
+  const { t } = useLang()
+  const [form, setForm] = useState(lot ? {
+    ...EMPTY_LOT,
+    ...Object.fromEntries(Object.entries(lot)
+      .filter(([k]) => k in EMPTY_LOT)
+      .map(([k, v]) => [k, v ?? ''])),
+  } : EMPTY_LOT)
+  const [items, setItems] = useState(() => (lot?.items || []).map((i) => ({
+    key: `existing-${i.id}`,
+    product_id: i.product_id,
+    name: i.name,
+    specs: i.specs || '',
+    icon: i.icon || 'laptop',
+    qty: i.qty,
+    unit_value: i.unit_value ?? '',
+  })))
+  const [catalog, setCatalog] = useState([])
+  const [pick, setPick] = useState({ product_id: '', qty: 1 })
+  const [error, setError] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { getProducts().then(setCatalog).catch(() => {}) }, [])
+
+  const set = (field) => (e) => setForm({ ...form, [field]: e.target.value })
+  const setItem = (key, field, value) =>
+    setItems((prev) => prev.map((i) => (i.key === key ? { ...i, [field]: value } : i)))
+
+  // Adding a catalogue product twice bumps its quantity instead of duplicating the row.
+  const addFromCatalog = () => {
+    const product = catalog.find((p) => String(p.id) === String(pick.product_id))
+    if (!product) return
+    const qty = Math.max(1, parseInt(pick.qty, 10) || 1)
+    const existing = items.find((i) => String(i.product_id) === String(product.id))
+    if (existing) {
+      setItem(existing.key, 'qty', Number(existing.qty) + qty)
+    } else {
+      lotRowKey += 1
+      setItems([...items, {
+        key: `row-${lotRowKey}`,
+        product_id: product.id,
+        name: product.name,
+        specs: product.specs || '',
+        icon: product.icon || 'laptop',
+        qty,
+        unit_value: product.price,
+      }])
+    }
+    setPick({ product_id: '', qty: 1 })
+  }
+
+  const addCustom = () => {
+    lotRowKey += 1
+    setItems([...items, {
+      key: `row-${lotRowKey}`,
+      product_id: null,
+      name: '',
+      specs: '',
+      icon: 'laptop',
+      qty: 1,
+      unit_value: '',
+    }])
+  }
+
+  const unitCount = items.reduce((sum, i) => sum + (parseInt(i.qty, 10) || 0), 0)
+  const retail = items.reduce((sum, i) => sum + (parseInt(i.qty, 10) || 0) * (parseFloat(i.unit_value) || 0), 0)
+  const price = parseFloat(form.price) || 0
+  const unitPrice = unitCount ? price / unitCount : 0
+  const discount = retail ? Math.round(((retail - price) / retail) * 100) : 0
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setSaving(true)
+    setError(null)
+    const payload = {
+      ...form,
+      price,
+      badge: form.badge || null,
+      items: items.map((i) => ({
+        product_id: i.product_id,
+        name: i.name,
+        specs: i.specs,
+        icon: i.icon,
+        qty: parseInt(i.qty, 10) || 1,
+        unit_value: i.unit_value === '' ? null : i.unit_value,
+      })),
+    }
+    try {
+      if (lot) {
+        await adminUpdateLot(lot.id, payload)
+        onSaved(`${t.admin.updated}: ${form.name}`)
+      } else {
+        await adminCreateLot(payload)
+        onSaved(`${t.admin.created}: ${form.name}`)
+      }
+    } catch (err) {
+      setError(err.message)
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-wide card" onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-header modal-header">
+          <h3>{lot ? t.admin.editLot : t.admin.addLot}</h3>
+          <button className="icon-button" onClick={onClose} aria-label="Close">
+            <Icon name="x" size={20} />
+          </button>
+        </div>
+
+        {error && <div className="alert alert-error">{error}</div>}
+
+        <form className="contact-form" onSubmit={handleSubmit}>
+          <div className="form-row">
+            <label>{t.admin.lotNameEn}<input required value={form.name} onChange={set('name')} /></label>
+            <label>{t.admin.lotNameFr}<input value={form.name_fr} onChange={set('name_fr')} /></label>
+          </div>
+          <div className="form-row">
+            <label>
+              {t.admin.lotPriceLabel}
+              <input required type="number" step="0.01" min="0" value={form.price} onChange={set('price')} />
+            </label>
+            <label>
+              {t.admin.grade}
+              <select value={form.grade} onChange={set('grade')}>
+                {LOT_GRADES.map((g) => <option key={g} value={g}>{t.lots.grades[g]}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="form-row">
+            <label>
+              {t.admin.lotStatus}
+              <select value={form.status} onChange={set('status')}>
+                {LOT_STATUSES.map((s) => <option key={s} value={s}>{t.lots.statuses[s]}</option>)}
+              </select>
+            </label>
+            <label>
+              {t.admin.badge}
+              <input value={form.badge} onChange={set('badge')} placeholder="Popular / New…" />
+            </label>
+          </div>
+          <div className="form-row">
+            <label>{t.admin.leadTimeEn}<input value={form.lead_time} onChange={set('lead_time')} placeholder="Ships within 3 business days" /></label>
+            <label>{t.admin.leadTimeFr}<input value={form.lead_time_fr} onChange={set('lead_time_fr')} placeholder="Expédié sous 3 jours ouvrables" /></label>
+          </div>
+          <label>{t.admin.description}<textarea rows={2} value={form.description} onChange={set('description')} /></label>
+          <label>{t.admin.descriptionFr}<textarea rows={2} value={form.description_fr} onChange={set('description_fr')} /></label>
+
+          {/* Manifest builder */}
+          <div className="lot-builder">
+            <h4>{t.admin.manifest}</h4>
+
+            <div className="lot-picker">
+              <select
+                value={pick.product_id}
+                onChange={(e) => setPick({ ...pick, product_id: e.target.value })}
+              >
+                <option value="">{t.admin.pickProduct}</option>
+                {catalog.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} · ${p.price.toFixed(2)}</option>
+                ))}
+              </select>
+              <input
+                type="number"
+                min="1"
+                value={pick.qty}
+                onChange={(e) => setPick({ ...pick, qty: e.target.value })}
+                aria-label={t.admin.qty}
+              />
+              <button type="button" className="btn btn-primary btn-sm" disabled={!pick.product_id} onClick={addFromCatalog}>
+                <Icon name="plus" size={15} /> {t.admin.addLine}
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={addCustom}>
+                {t.admin.customLine}
+              </button>
+            </div>
+
+            {!items.length && <p className="muted lot-builder-empty">{t.admin.noItems}</p>}
+
+            {items.map((item) => (
+              <div key={item.key} className="lot-row">
+                <div className="lot-row-main">
+                  {item.product_id ? (
+                    <>
+                      <span className="lot-row-name">
+                        <Icon name={item.icon} size={16} /> {item.name}
+                      </span>
+                      <span className="muted lot-row-specs">{item.specs}</span>
+                    </>
+                  ) : (
+                    <>
+                      <input
+                        required
+                        placeholder={t.admin.itemName}
+                        value={item.name}
+                        onChange={(e) => setItem(item.key, 'name', e.target.value)}
+                      />
+                      <input
+                        placeholder={t.admin.itemSpecs}
+                        value={item.specs}
+                        onChange={(e) => setItem(item.key, 'specs', e.target.value)}
+                      />
+                    </>
+                  )}
+                </div>
+                <input
+                  className="lot-row-qty"
+                  type="number"
+                  min="1"
+                  value={item.qty}
+                  onChange={(e) => setItem(item.key, 'qty', e.target.value)}
+                  aria-label={t.admin.qty}
+                />
+                <input
+                  className="lot-row-value"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder={t.admin.unitValue}
+                  value={item.unit_value}
+                  onChange={(e) => setItem(item.key, 'unit_value', e.target.value)}
+                  aria-label={t.admin.unitValue}
+                />
+                <button
+                  type="button"
+                  className="icon-button remove"
+                  title={t.admin.removeLine}
+                  onClick={() => setItems(items.filter((i) => i.key !== item.key))}
+                >
+                  <Icon name="x" size={16} />
+                </button>
+              </div>
+            ))}
+
+            {items.length > 0 && (
+              <div className="lot-summary">
+                <div><span>{t.admin.sumUnits}</span><strong>{unitCount}</strong></div>
+                <div><span>{t.admin.sumRetail}</span><strong>${retail.toFixed(2)}</strong></div>
+                <div><span>{t.admin.sumUnitPrice}</span><strong>${unitPrice.toFixed(2)}</strong></div>
+                <div><span>{t.admin.sumMargin}</span><strong>{discount}%</strong></div>
+              </div>
+            )}
+          </div>
+
+          <button className="btn btn-primary btn-block" disabled={saving}>
+            {saving ? t.admin.saving : lot ? t.admin.save : t.admin.createLot}
           </button>
         </form>
       </div>

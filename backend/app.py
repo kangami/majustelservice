@@ -151,6 +151,33 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'admin'
 );
+
+CREATE TABLE IF NOT EXISTS lots (
+    id {PK_TYPE},
+    name TEXT NOT NULL,
+    name_fr TEXT,
+    description TEXT,
+    description_fr TEXT,
+    price REAL NOT NULL,
+    grade TEXT NOT NULL DEFAULT 'refurbished',
+    badge TEXT,
+    status TEXT NOT NULL DEFAULT 'available',
+    lead_time TEXT,
+    lead_time_fr TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS lot_items (
+    id {PK_TYPE},
+    lot_id INTEGER NOT NULL,
+    product_id INTEGER,
+    name TEXT NOT NULL,
+    specs TEXT,
+    icon TEXT,
+    qty INTEGER NOT NULL DEFAULT 1,
+    unit_value REAL,
+    position INTEGER NOT NULL DEFAULT 0
+);
 """
 
 PRODUCTS = [
@@ -301,6 +328,55 @@ SERVICES = [
 ]
 
 
+LOTS = [
+    {
+        "name": "Office Starter Lot", "name_fr": "Lot Bureau Essentiel",
+        "description": "Twenty tested office machines ready to deploy, ideal for a "
+                       "small business refresh or a first reseller order.",
+        "description_fr": "Vingt postes bureautiques testés et prêts à déployer, idéals "
+                          "pour renouveler une PME ou pour une première commande revendeur.",
+        "price": 8900.00, "grade": "grade_a", "badge": "Best Value",
+        "lead_time": "Ships within 3 business days",
+        "lead_time_fr": "Expédié sous 3 jours ouvrables",
+        "items": [("Aspire 5 Essential", 12), ("Pavilion 15", 8)],
+    },
+    {
+        "name": "Business Mobility Lot", "name_fr": "Lot Mobilité Affaires",
+        "description": "Twelve premium business ultrabooks, every unit cleaned, "
+                       "reinstalled and covered by our 180 day warranty.",
+        "description_fr": "Douze ultraportables professionnels haut de gamme, chaque "
+                          "appareil nettoyé, réinstallé et couvert par notre garantie 180 jours.",
+        "price": 12400.00, "grade": "grade_a", "badge": "Popular",
+        "lead_time": "Ships within 5 business days",
+        "lead_time_fr": "Expédié sous 5 jours ouvrables",
+        "items": [("ThinkPad X1 Carbon", 6), ("ProBook Ultra 14", 6)],
+    },
+    {
+        "name": "Creative Studio Lot", "name_fr": "Lot Studio Créatif",
+        "description": "Nine high performance machines for editing, rendering and "
+                       "design work, sold as one turnkey batch.",
+        "description_fr": "Neuf machines haute performance pour le montage, le rendu et "
+                          "le design, vendues en un seul lot clé en main.",
+        "price": 10500.00, "grade": "new", "badge": "New",
+        "lead_time": "Ships within 7 business days",
+        "lead_time_fr": "Expédié sous 7 jours ouvrables",
+        "items": [("XPS 15 Creator", 4), ("MacBook Air M3", 3), ("ROG Zephyrus G14", 2)],
+    },
+    {
+        "name": "Full Deployment Lot", "name_fr": "Lot Déploiement Complet",
+        "description": "Ten workstations delivered complete with docking stations and "
+                       "peripherals, so every desk is ready on day one.",
+        "description_fr": "Dix postes livrés complets avec stations d'accueil et "
+                          "périphériques, pour que chaque bureau soit prêt dès le premier jour.",
+        "price": 5600.00, "grade": "refurbished", "badge": None,
+        "lead_time": "Ships within 3 business days",
+        "lead_time_fr": "Expédié sous 3 jours ouvrables",
+        "items": [("Aspire 5 Essential", 10), ("USB-C Docking Station", 10),
+                  ("MX Master 3S Mouse", 10)],
+    },
+]
+
+
 def init_db():
     conn = connect()
     cur = conn.cursor()
@@ -358,6 +434,26 @@ def init_db():
         cur.executemany(
             "INSERT INTO services (name, description, price_from, duration, icon, name_fr,"
             f" description_fr, duration_fr) VALUES ({marks})", SERVICES)
+    if count("lots") == 0:
+        for lot in LOTS:
+            cur.execute(
+                "INSERT INTO lots (name, name_fr, description, description_fr, price, grade,"
+                f" badge, status, lead_time, lead_time_fr, created_at) VALUES ({','.join([ph] * 11)})"
+                + (" RETURNING id" if IS_POSTGRES else ""),
+                (lot["name"], lot["name_fr"], lot["description"], lot["description_fr"],
+                 lot["price"], lot["grade"], lot["badge"], "available",
+                 lot["lead_time"], lot["lead_time_fr"], datetime.utcnow().isoformat()))
+            lot_id = cur.fetchone()["id"] if IS_POSTGRES else cur.lastrowid
+            for position, (product_name, qty) in enumerate(lot["items"]):
+                cur.execute(f"SELECT id, name, specs, icon, price FROM products WHERE name = {ph}",
+                            (product_name,))
+                p = cur.fetchone()
+                if p is None:
+                    continue
+                cur.execute(
+                    "INSERT INTO lot_items (lot_id, product_id, name, specs, icon, qty,"
+                    f" unit_value, position) VALUES ({','.join([ph] * 8)})",
+                    (lot_id, p["id"], p["name"], p["specs"], p["icon"], qty, p["price"], position))
     if count("users") == 0:
         admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
         cur.execute(
@@ -589,6 +685,192 @@ def admin_delete_service(service_id):
     if cur.rowcount == 0:
         return jsonify({"error": "Service not found"}), 404
     return jsonify({"message": "Service deleted"})
+
+
+# ---------------------------------------------------------------------------
+# Lots: bulk batches of machines sold to resellers
+# ---------------------------------------------------------------------------
+
+LOT_FIELDS = ["name", "name_fr", "description", "description_fr", "price",
+              "grade", "badge", "status", "lead_time", "lead_time_fr"]
+LOT_GRADES = ["new", "grade_a", "refurbished"]
+LOT_STATUSES = ["available", "reserved", "sold"]
+MAX_LOT_ITEMS = 25
+
+
+def lot_to_dict(row):
+    """Serialize a lot with its manifest and the figures a reseller compares on."""
+    lot = dict(row)
+    items = [dict(i) for i in fetch_all(
+        "SELECT * FROM lot_items WHERE lot_id = ? ORDER BY position, id", (lot["id"],))]
+    for item in items:
+        item["qty"] = int(item["qty"] or 0)
+        item["unit_value"] = float(item["unit_value"]) if item["unit_value"] is not None else None
+        item["subtotal"] = round(item["qty"] * (item["unit_value"] or 0), 2)
+    unit_count = sum(i["qty"] for i in items)
+    retail_value = round(sum(i["subtotal"] for i in items), 2)
+    lot["items"] = items
+    lot["unit_count"] = unit_count
+    lot["retail_value"] = retail_value
+    lot["unit_price"] = round(lot["price"] / unit_count, 2) if unit_count else None
+    lot["savings"] = round(retail_value - lot["price"], 2) if retail_value else 0
+    return lot
+
+
+def lot_items_payload(raw):
+    """Normalize the manifest. Rows may reference a product or be typed by hand."""
+    errors = []
+    items = []
+    if not isinstance(raw, list):
+        return [], ["items"]
+    for position, entry in enumerate(raw[:MAX_LOT_ITEMS]):
+        if not isinstance(entry, dict):
+            errors.append(f"items[{position}]")
+            continue
+        try:
+            qty = max(1, int(entry.get("qty") or 1))
+        except (TypeError, ValueError):
+            errors.append(f"items[{position}].qty")
+            continue
+
+        product_id = entry.get("product_id")
+        product = None
+        if product_id not in (None, ""):
+            try:
+                product_id = int(product_id)
+            except (TypeError, ValueError):
+                errors.append(f"items[{position}].product_id")
+                continue
+            product = fetch_one(
+                "SELECT id, name, specs, icon, price FROM products WHERE id = ?", (product_id,))
+            if product is None:
+                errors.append(f"items[{position}].product_id")
+                continue
+        else:
+            product_id = None
+
+        # A product row only needs a quantity: everything else is copied from the
+        # catalogue, while a hand typed row carries its own name, specs and value.
+        name = str(entry.get("name") or (product["name"] if product else "")).strip()
+        if not name:
+            errors.append(f"items[{position}].name")
+            continue
+        specs = str(entry.get("specs") or (product["specs"] if product else "")).strip()
+        icon = str(entry.get("icon") or (product["icon"] if product else "laptop")).strip()
+
+        unit_value = entry.get("unit_value")
+        if unit_value in (None, ""):
+            unit_value = product["price"] if product else None
+        if unit_value is not None:
+            try:
+                unit_value = float(unit_value)
+            except (TypeError, ValueError):
+                errors.append(f"items[{position}].unit_value")
+                continue
+
+        items.append({"product_id": product_id, "name": name, "specs": specs, "icon": icon,
+                      "qty": qty, "unit_value": unit_value, "position": position})
+    return items, errors
+
+
+def lot_payload(data, partial=False):
+    errors = []
+    values = {f: data[f] for f in LOT_FIELDS if f in data}
+    if not partial:
+        if not str(data.get("name", "")).strip():
+            errors.append("name")
+        if "price" not in data:
+            errors.append("price")
+    if "price" in values:
+        try:
+            values["price"] = max(0.0, float(values["price"] or 0))
+        except (TypeError, ValueError):
+            errors.append("price")
+    if values.get("grade") not in (None, *LOT_GRADES):
+        errors.append("grade")
+    if values.get("status") not in (None, *LOT_STATUSES):
+        errors.append("status")
+    return values, errors
+
+
+def replace_lot_items(lot_id, items):
+    db_execute("DELETE FROM lot_items WHERE lot_id = ?", (lot_id,))
+    for item in items:
+        db_execute(
+            "INSERT INTO lot_items (lot_id, product_id, name, specs, icon, qty, unit_value,"
+            " position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (lot_id, item["product_id"], item["name"], item["specs"], item["icon"],
+             item["qty"], item["unit_value"], item["position"]))
+
+
+@app.get("/api/lots")
+def list_lots():
+    rows = fetch_all(
+        "SELECT * FROM lots ORDER BY CASE status WHEN 'available' THEN 0 WHEN 'reserved'"
+        " THEN 1 ELSE 2 END, id")
+    return jsonify([lot_to_dict(r) for r in rows])
+
+
+@app.get("/api/lots/<int:lot_id>")
+def get_lot(lot_id):
+    row = fetch_one("SELECT * FROM lots WHERE id = ?", (lot_id,))
+    if row is None:
+        return jsonify({"error": "Lot not found"}), 404
+    return jsonify(lot_to_dict(row))
+
+
+@app.post("/api/admin/lots")
+@require_admin
+def admin_create_lot():
+    data = request.get_json(silent=True) or {}
+    values, errors = lot_payload(data)
+    items, item_errors = lot_items_payload(data.get("items") or [])
+    errors += item_errors
+    if errors:
+        return jsonify({"error": f"Invalid or missing fields: {', '.join(errors)}"}), 400
+    values.setdefault("grade", "refurbished")
+    values.setdefault("status", "available")
+    values["created_at"] = datetime.utcnow().isoformat()
+    cols = ", ".join(values.keys())
+    marks = ", ".join("?" * len(values))
+    lot_id = insert_returning_id(f"INSERT INTO lots ({cols}) VALUES ({marks})",
+                                list(values.values()))
+    replace_lot_items(lot_id, items)
+    get_db().commit()
+    return jsonify(lot_to_dict(fetch_one("SELECT * FROM lots WHERE id = ?", (lot_id,)))), 201
+
+
+@app.put("/api/admin/lots/<int:lot_id>")
+@require_admin
+def admin_update_lot(lot_id):
+    if fetch_one("SELECT id FROM lots WHERE id = ?", (lot_id,)) is None:
+        return jsonify({"error": "Lot not found"}), 404
+    data = request.get_json(silent=True) or {}
+    values, errors = lot_payload(data, partial=True)
+    items, item_errors = ([], [])
+    if "items" in data:
+        items, item_errors = lot_items_payload(data.get("items") or [])
+    errors += item_errors
+    if errors:
+        return jsonify({"error": f"Invalid fields: {', '.join(errors)}"}), 400
+    if values:
+        assignments = ", ".join(f"{k} = ?" for k in values)
+        db_execute(f"UPDATE lots SET {assignments} WHERE id = ?", [*values.values(), lot_id])
+    if "items" in data:
+        replace_lot_items(lot_id, items)
+    get_db().commit()
+    return jsonify(lot_to_dict(fetch_one("SELECT * FROM lots WHERE id = ?", (lot_id,))))
+
+
+@app.delete("/api/admin/lots/<int:lot_id>")
+@require_admin
+def admin_delete_lot(lot_id):
+    db_execute("DELETE FROM lot_items WHERE lot_id = ?", (lot_id,))
+    cur = db_execute("DELETE FROM lots WHERE id = ?", (lot_id,))
+    get_db().commit()
+    if cur.rowcount == 0:
+        return jsonify({"error": "Lot not found"}), 404
+    return jsonify({"message": "Lot deleted"})
 
 
 @app.get("/api/admin/orders")

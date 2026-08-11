@@ -9,10 +9,14 @@ export default function Contact() {
   const { t } = useLang()
   const [params] = useSearchParams()
   const bookedService = params.get('service')
+  const requestedLot = params.get('lot')
+  const prefill = bookedService
+    ? `${t.contact.bookingPrefix}: ${bookedService}`
+    : requestedLot ? `${t.lots.requestPrefix}: ${requestedLot}` : ''
   const [form, setForm] = useState({
     name: '',
     email: '',
-    subject: bookedService ? `${t.contact.bookingPrefix}: ${bookedService}` : '',
+    subject: prefill,
     message: '',
   })
   const [status, setStatus] = useState(null)
@@ -76,6 +80,11 @@ export default function Contact() {
           {bookedService && (
             <div className="alert alert-info">
               {t.contact.bookingFor} <strong>{bookedService}</strong>
+            </div>
+          )}
+          {!bookedService && requestedLot && (
+            <div className="alert alert-info">
+              {t.lots.requestFor} <strong>{requestedLot}</strong>
             </div>
           )}
           {status && <div className={`alert alert-${status.type}`}>{status.text}</div>}

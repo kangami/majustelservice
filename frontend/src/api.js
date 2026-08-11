@@ -15,6 +15,8 @@ export const getProducts = (category = 'all', q = '') =>
 
 export const getServices = () => request('/services')
 
+export const getLots = () => request('/lots')
+
 export const placeOrder = (payload) =>
   request('/orders', { method: 'POST', body: JSON.stringify(payload) })
 
@@ -56,6 +58,15 @@ export const adminUpdateService = (id, payload) =>
 
 export const adminDeleteService = (id) =>
   request(`/admin/services/${id}`, { method: 'DELETE' })
+
+export const adminCreateLot = (payload) =>
+  request('/admin/lots', { method: 'POST', body: JSON.stringify(payload) })
+
+export const adminUpdateLot = (id, payload) =>
+  request(`/admin/lots/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+
+export const adminDeleteLot = (id) =>
+  request(`/admin/lots/${id}`, { method: 'DELETE' })
 
 export const adminGetOrders = () => request('/admin/orders')
 

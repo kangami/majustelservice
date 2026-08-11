@@ -25,6 +25,7 @@ export default function Footer() {
             <li><Link to="/shop">{t.footer.laptops}</Link></li>
             <li><Link to="/shop">{t.footer.accessories}</Link></li>
             <li><Link to="/rentals">{t.footer.rentals}</Link></li>
+            <li><Link to="/lots">{t.footer.lots}</Link></li>
             <li><Link to="/services">{t.footer.maintenance}</Link></li>
             <li><Link to="/contact">{t.footer.contactUs}</Link></li>
           </ul>
