@@ -8,7 +8,7 @@ export const CONTACT_INFO = {
 
 export const translations = {
   en: {
-    nav: { home: 'Home', shop: 'Shop', rentals: 'Rentals', lots: 'Lots', services: 'Services', contact: 'Contact', admin: 'Admin' },
+    nav: { home: 'Home', shop: 'Shop', rentals: 'Rentals', lots: 'Resellers', services: 'Services', contact: 'Contact', admin: 'Admin' },
     hero: {
       eyebrow: 'Laptops · Rentals · Equipment · Maintenance',
       title1: 'Powerful laptops.',
@@ -366,7 +366,7 @@ export const translations = {
       laptops: 'Laptops',
       accessories: 'Accessories',
       rentals: 'Laptop Rentals',
-      lots: 'Bulk Lots',
+      lots: 'Resellers',
       maintenance: 'Maintenance Services',
       contactUs: 'Contact Us',
       servicesCol: 'Services',
@@ -383,7 +383,7 @@ export const translations = {
   },
 
   fr: {
-    nav: { home: 'Accueil', shop: 'Boutique', rentals: 'Location', lots: 'Lots', services: 'Services', contact: 'Contact', admin: 'Admin' },
+    nav: { home: 'Accueil', shop: 'Boutique', rentals: 'Location', lots: 'Revendeurs', services: 'Services', contact: 'Contact', admin: 'Admin' },
     hero: {
       eyebrow: 'Portables · Location · Équipement · Entretien',
       title1: 'Portables performants.',
@@ -741,7 +741,7 @@ export const translations = {
       laptops: 'Portables',
       accessories: 'Accessoires',
       rentals: 'Location de portables',
-      lots: 'Lots pour revendeurs',
+      lots: 'Revendeurs',
       maintenance: 'Services d\'entretien',
       contactUs: 'Nous joindre',
       servicesCol: 'Services',
