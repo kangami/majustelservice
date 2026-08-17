@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext.jsx'
 import { useLang } from '../LanguageContext.jsx'
 import {
-  getProducts, adminCreateProduct, adminUpdateProduct, adminDeleteProduct,
+  getProducts, adminCreateProduct, adminUpdateProduct, adminDeleteProduct, adminReorderProducts,
   getServices, adminCreateService, adminUpdateService, adminDeleteService,
   getLots, adminCreateLot, adminUpdateLot, adminDeleteLot,
   adminGetOrders, adminUpdateOrder,
@@ -88,6 +88,7 @@ function ProductsAdmin() {
   const [products, setProducts] = useState([])
   const [editing, setEditing] = useState(null) // null | 'new' | product object
   const [status, setStatus] = useState(null)
+  const [dragId, setDragId] = useState(null)
 
   const load = () => getProducts().then(setProducts).catch((e) => setStatus({ type: 'error', text: e.message }))
   useEffect(() => { load() }, [])
@@ -103,6 +104,34 @@ function ProductsAdmin() {
     }
   }
 
+  // Reorders the local list live as the row is dragged over its neighbours,
+  // then persists the final order once the drag ends.
+  const handleDragOver = (overId) => (e) => {
+    e.preventDefault()
+    if (overId === dragId) return
+    setProducts((prev) => {
+      const from = prev.findIndex((p) => p.id === dragId)
+      const to = prev.findIndex((p) => p.id === overId)
+      if (from === -1 || to === -1 || from === to) return prev
+      const next = [...prev]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  }
+
+  const handleDrop = async (e) => {
+    e.preventDefault()
+    if (dragId == null) return
+    setDragId(null)
+    try {
+      await adminReorderProducts(products.map((p) => p.id))
+    } catch (err) {
+      setStatus({ type: 'error', text: `${t.admin.reorderError}: ${err.message}` })
+      load()
+    }
+  }
+
   return (
     <>
       <div className="admin-toolbar">
@@ -112,10 +141,13 @@ function ProductsAdmin() {
         </button>
       </div>
 
+      <p className="muted admin-hint">{t.admin.reorderHint}</p>
+
       <div className="table-wrap">
         <table className="admin-table">
           <thead>
             <tr>
+              <th></th>
               <th>{t.admin.product}</th>
               <th>{t.admin.category}</th>
               <th>{t.admin.price}</th>
@@ -126,7 +158,20 @@ function ProductsAdmin() {
           </thead>
           <tbody>
             {products.map((p) => (
-              <tr key={p.id}>
+              <tr
+                key={p.id}
+                draggable
+                onDragStart={() => setDragId(p.id)}
+                onDragOver={handleDragOver(p.id)}
+                onDrop={handleDrop}
+                onDragEnd={() => setDragId(null)}
+                className={dragId === p.id ? 'is-dragging' : ''}
+              >
+                <td className="drag-handle-cell">
+                  <span className="drag-handle" title={t.admin.dragToReorder}>
+                    <Icon name="grip" size={16} />
+                  </span>
+                </td>
                 <td>
                   <div className="table-product">
                     {coverImage(p)

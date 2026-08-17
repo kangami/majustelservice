@@ -2177,6 +2177,11 @@ main {
 
 .admin-toolbar .alert { flex: 1; min-width: 240px; margin: 0; }
 
+.admin-hint {
+  font-size: 0.82rem;
+  margin: -8px 0 14px;
+}
+
 .table-wrap {
   overflow-x: auto;
   border: 1px solid var(--gray-100);
@@ -2210,6 +2215,23 @@ main {
 
 .admin-table tr:last-child td { border-bottom: none; }
 .admin-table tr:hover td { background: var(--gray-50); }
+
+.drag-handle-cell { width: 32px; padding-right: 0 !important; }
+
+.drag-handle {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--gray-400);
+  cursor: grab;
+  border-radius: 6px;
+}
+
+.drag-handle:hover { color: var(--gray-700); background: var(--gray-100); }
+
+.admin-table tr.is-dragging { opacity: 0.4; }
+.admin-table tr[draggable="true"] { cursor: grab; }
 
 .table-product {
   display: flex;

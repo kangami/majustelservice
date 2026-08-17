@@ -104,7 +104,8 @@ CREATE TABLE IF NOT EXISTS products (
     image TEXT,
     description_fr TEXT,
     images TEXT,
-    rental_price REAL
+    rental_price REAL,
+    position INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS services (
@@ -387,6 +388,7 @@ def init_db():
     migrations_pg = [
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS images TEXT",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS rental_price REAL",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS position INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'cod'",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_session_id TEXT",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_type TEXT DEFAULT 'purchase'",
@@ -397,6 +399,7 @@ def init_db():
     migrations_sqlite = [
         "ALTER TABLE products ADD COLUMN images TEXT",
         "ALTER TABLE products ADD COLUMN rental_price REAL",
+        "ALTER TABLE products ADD COLUMN position INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT 'cod'",
         "ALTER TABLE orders ADD COLUMN stripe_session_id TEXT",
         "ALTER TABLE orders ADD COLUMN order_type TEXT DEFAULT 'purchase'",
@@ -598,6 +601,8 @@ def admin_create_product():
     values.setdefault("specs", "")
     values.setdefault("stock", 10)
     values.setdefault("icon", "laptop")
+    max_position = fetch_one("SELECT COALESCE(MAX(position), -1) AS m FROM products")
+    values["position"] = max_position["m"] + 1
     cols = ", ".join(values.keys())
     marks = ", ".join("?" * len(values))
     new_id = insert_returning_id(
@@ -633,6 +638,24 @@ def admin_delete_product(product_id):
     if cur.rowcount == 0:
         return jsonify({"error": "Product not found"}), 404
     return jsonify({"message": "Product deleted"})
+
+
+@app.put("/api/admin/products/reorder")
+@require_admin
+def admin_reorder_products():
+    data = request.get_json(silent=True) or {}
+    order = data.get("order")
+    if not isinstance(order, list) or not order:
+        return jsonify({"error": "order must be a non-empty list of product ids"}), 400
+    try:
+        ids = [int(i) for i in order]
+    except (TypeError, ValueError):
+        return jsonify({"error": "order must contain integer ids"}), 400
+    for position, product_id in enumerate(ids):
+        db_execute("UPDATE products SET position = ? WHERE id = ?", (position, product_id))
+    get_db().commit()
+    rows = fetch_all("SELECT * FROM products ORDER BY position, id")
+    return jsonify([product_to_dict(r) for r in rows])
 
 
 SERVICE_FIELDS = ["name", "description", "price_from", "duration", "icon",
@@ -948,7 +971,7 @@ def list_products():
         query += f" AND (name {op} ? OR brand {op} ? OR description {op} ?)"
         like = f"%{search}%"
         params += [like, like, like]
-    rows = fetch_all(query + " ORDER BY id", params)
+    rows = fetch_all(query + " ORDER BY position, id", params)
     return jsonify([product_to_dict(r) for r in rows])
 
 

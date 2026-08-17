@@ -50,6 +50,9 @@ export const adminUpdateProduct = (id, payload) =>
 export const adminDeleteProduct = (id) =>
   request(`/admin/products/${id}`, { method: 'DELETE' })
 
+export const adminReorderProducts = (order) =>
+  request('/admin/products/reorder', { method: 'PUT', body: JSON.stringify({ order }) })
+
 export const adminCreateService = (payload) =>
   request('/admin/services', { method: 'POST', body: JSON.stringify(payload) })
 
