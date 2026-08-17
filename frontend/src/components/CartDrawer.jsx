@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useCart } from '../CartContext.jsx'
 import { useLang } from '../LanguageContext.jsx'
-import { placeOrder, createCheckoutSession } from '../api.js'
+import { placeOrder, createCheckoutSession, getShippingQuote } from '../api.js'
 import { coverImage } from '../imageUtils.js'
 import AddressInput from './AddressInput.jsx'
 import Icon from './Icons.jsx'
@@ -13,11 +13,29 @@ export default function CartDrawer() {
   const [form, setForm] = useState({ customer_name: '', email: '', phone: '', address: '' })
   const [status, setStatus] = useState(null) // {type: 'success'|'error', text}
   const [submitting, setSubmitting] = useState(false)
+  const [shipping, setShipping] = useState(null) // quote from the backend, or null while unknown
+  const shippingTimer = useRef(null)
+
+  useEffect(() => {
+    clearTimeout(shippingTimer.current)
+    if (!form.address.trim()) {
+      setShipping(null)
+      return
+    }
+    shippingTimer.current = setTimeout(() => {
+      getShippingQuote(form.address).then(setShipping).catch(() => setShipping(null))
+    }, 600)
+    return () => clearTimeout(shippingTimer.current)
+  }, [form.address])
+
+  const shippingFee = shipping?.mode === 'free' || shipping?.mode === 'flat' ? shipping.fee : 0
+  const grandTotal = total + shippingFee
 
   const close = () => {
     setOpen(false)
     setCheckout(false)
     setStatus(null)
+    setShipping(null)
   }
 
   const handleSubmit = async (e) => {
@@ -38,6 +56,7 @@ export default function CartDrawer() {
       setCheckout(false)
       setStatus({ type: 'success', text: `Order #${res.order_id} for $${res.total.toFixed(2)}. ${res.message}` })
       setForm({ customer_name: '', email: '', phone: '', address: '' })
+      setShipping(null)
     } catch (err) {
       setStatus({ type: 'error', text: err.message })
     } finally {
@@ -99,7 +118,7 @@ export default function CartDrawer() {
             {items.length > 0 && (
               <div className="cart-footer">
                 <div className="cart-total">
-                  <span>{t.cart.total}</span>
+                  <span>{checkout ? t.cart.subtotal : t.cart.total}</span>
                   <strong>${total.toFixed(2)}</strong>
                 </div>
 
@@ -133,13 +152,32 @@ export default function CartDrawer() {
                       value={form.address}
                       onChange={(v) => setForm((prev) => ({ ...prev, address: v }))}
                     />
+
+                    <div className="shipping-quote">
+                      {!form.address.trim() && <span className="muted">{t.cart.shippingEnterAddress}</span>}
+                      {form.address.trim() && !shipping && <span className="muted">{t.cart.shippingCalculating}</span>}
+                      {shipping?.mode === 'free' && (
+                        <span>{t.cart.shipping}: <strong>{t.cart.shippingFree}</strong></span>
+                      )}
+                      {shipping?.mode === 'flat' && (
+                        <span>{t.cart.shipping}: <strong>${shipping.fee.toFixed(2)}</strong></span>
+                      )}
+                      {shipping?.mode === 'canada_post' && <span className="muted">{t.cart.shippingCanadaPost}</span>}
+                      {shipping?.mode === 'unavailable' && <span className="muted">{t.cart.shippingUnavailable}</span>}
+                    </div>
+
+                    <div className="cart-total cart-grand-total">
+                      <span>{t.cart.total}</span>
+                      <strong>${grandTotal.toFixed(2)}</strong>
+                    </div>
+
                     <button
                       type="submit"
                       value="card"
                       className="btn btn-primary btn-block"
                       disabled={submitting}
                     >
-                      {submitting ? t.cart.placing : `${t.cart.payCard} · $${total.toFixed(2)}`}
+                      {submitting ? t.cart.placing : `${t.cart.payCard} · $${grandTotal.toFixed(2)}`}
                     </button>
                     <button
                       type="submit"

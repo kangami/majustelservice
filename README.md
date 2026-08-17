@@ -28,13 +28,25 @@ npm run dev
 
 Open http://localhost:5173 — the dev server proxies `/api/*` to the Flask backend.
 
+### Environment variables (backend)
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Postgres connection string in production; omit to use local SQLite |
+| `SECRET_KEY` | Flask session secret — set a real one before deploying |
+| `ADMIN_PASSWORD` | Password for the seeded `admin` account (first run only) |
+| `STRIPE_SECRET_KEY` | Enables card checkout; omit to only offer pay-on-delivery |
+| `GOOGLE_MAPS_SERVER_KEY` | Server-side key with the Distance Matrix API enabled, used to price shipping by road distance from the office address. Without it, every order falls back to a manual shipping quote. Distinct from the frontend's `VITE_GOOGLE_MAPS_KEY` (address autocomplete only) — never reuse a browser-restricted key here. |
+| `FRONTEND_URL` | Used to build Stripe redirect URLs when the `Origin` header isn't available |
+
 ## Admin panel
 
 Open http://localhost:5173/login (or click the shield icon in the navbar).
 
 - Default credentials: **admin / admin123** — change these before deploying (`users` table; also set a real `app.secret_key` in `backend/app.py`).
-- **Products tab:** add, edit and delete products (name, price, stock, badge, image, …).
+- **Products tab:** add, edit and delete products (name, price, stock, badge, image, …); drag rows by the ⋮⋮ handle to reorder — that order is what shoppers see.
 - **Orders tab:** view customer orders and update their status (new → processing → shipped → completed / cancelled).
+- **Shipping tab:** set your office/warehouse address and the distance-based delivery fee tiers (free under X km, flat fees up to three further bands, then "quoted manually" beyond that — orders past the last tier are flagged `canada_post` for you to price by hand). Requires `GOOGLE_MAPS_SERVER_KEY` (see below) to actually compute distances; without it every order falls back to a manual quote.
 
 ## API
 
@@ -43,13 +55,16 @@ Open http://localhost:5173/login (or click the shield icon in the navbar).
 | GET | `/api/products?category=laptops\|accessories&q=` | List/search products |
 | GET | `/api/products/<id>` | Product detail |
 | GET | `/api/services` | Maintenance services |
-| POST | `/api/orders` | Place an order (checkout) |
+| POST | `/api/orders` | Place an order (checkout); total includes the calculated shipping fee |
+| POST | `/api/shipping/quote` | Preview the shipping fee for a delivery address |
 | POST | `/api/contact` | Contact / service booking message |
 | POST | `/api/auth/login` | Admin login (session cookie) |
 | POST | `/api/auth/logout` | Log out |
 | GET | `/api/auth/me` | Current session user |
 | POST/PUT/DELETE | `/api/admin/products[/<id>]` | Manage products (admin only) |
+| PUT | `/api/admin/products/reorder` | Persist drag-and-drop product order (admin only) |
 | GET/PUT | `/api/admin/orders[/<id>]` | List orders / update status (admin only) |
+| GET/PUT | `/api/admin/shipping` | Read/update the office address and fee tiers (admin only) |
 
 ## Features
 

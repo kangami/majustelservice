@@ -7,9 +7,11 @@ import {
   getServices, adminCreateService, adminUpdateService, adminDeleteService,
   getLots, adminCreateLot, adminUpdateLot, adminDeleteLot,
   adminGetOrders, adminUpdateOrder,
+  adminGetShipping, adminUpdateShipping,
 } from '../api.js'
 import { productImages, coverImage, fileToDataUrl } from '../imageUtils.js'
 import Icon from '../components/Icons.jsx'
+import AddressInput from '../components/AddressInput.jsx'
 
 const EMPTY_PRODUCT = {
   name: '', brand: '', category: 'laptops', price: '', old_price: '',
@@ -70,12 +72,16 @@ export default function Admin() {
           <button className={`chip ${tab === 'orders' ? 'chip-active' : ''}`} onClick={() => setTab('orders')}>
             {t.admin.orders}
           </button>
+          <button className={`chip ${tab === 'shipping' ? 'chip-active' : ''}`} onClick={() => setTab('shipping')}>
+            {t.admin.shippingTab}
+          </button>
         </div>
 
         {tab === 'products' && <ProductsAdmin />}
         {tab === 'services' && <ServicesAdmin />}
         {tab === 'lots' && <LotsAdmin />}
         {tab === 'orders' && <OrdersAdmin />}
+        {tab === 'shipping' && <ShippingAdmin />}
       </div>
     </section>
   )
@@ -970,6 +976,7 @@ function OrdersAdmin() {
                 <th>{t.admin.customer}</th>
                 <th>{t.admin.items}</th>
                 <th>{t.admin.totalCol}</th>
+                <th>{t.admin.shippingCol}</th>
                 <th>{t.admin.payment}</th>
                 <th>{t.admin.date}</th>
                 <th>{t.admin.status}</th>
@@ -986,6 +993,17 @@ function OrdersAdmin() {
                   </td>
                   <td className="table-items">{o.items}</td>
                   <td><strong>${o.total.toFixed(2)}</strong></td>
+                  <td>
+                    {o.shipping_mode === 'free' && <span className="tag">{t.admin.shippingModes.free}</span>}
+                    {o.shipping_mode === 'flat' && <span>${o.shipping_fee.toFixed(2)}</span>}
+                    {(o.shipping_mode === 'canada_post' || o.shipping_mode === 'unavailable') && (
+                      <span className="tag tag-warn">{t.admin.shippingModes[o.shipping_mode]}</span>
+                    )}
+                    {!o.shipping_mode && '—'}
+                    {o.shipping_distance_km != null && (
+                      <span className="muted table-sub">{o.shipping_distance_km} km</span>
+                    )}
+                  </td>
                   <td>
                     <span className="tag">{t.payments[o.payment_method] || o.payment_method || '—'}</span>
                     {o.order_type === 'rental' && <span className="tag tag-rental">{t.admin.rentalTag}</span>}
@@ -1006,6 +1024,116 @@ function OrdersAdmin() {
           </table>
         </div>
       )}
+    </>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+
+function ShippingAdmin() {
+  const { t } = useLang()
+  const [form, setForm] = useState(null)
+  const [status, setStatus] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    adminGetShipping().then(setForm).catch((e) => setStatus({ type: 'error', text: e.message }))
+  }, [])
+
+  if (!form) return <div className="loading">{t.admin.loading}</div>
+
+  const set = (field) => (e) => setForm({ ...form, [field]: e.target.value })
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setSaving(true)
+    setStatus(null)
+    try {
+      const updated = await adminUpdateShipping({
+        office_address: form.office_address,
+        free_km: form.free_km,
+        tier2_km: form.tier2_km,
+        tier2_price: form.tier2_price,
+        tier3_km: form.tier3_km,
+        tier3_price: form.tier3_price,
+        tier4_km: form.tier4_km,
+        tier4_price: form.tier4_price,
+      })
+      setForm(updated)
+      setStatus({ type: 'success', text: t.admin.shippingSaved })
+    } catch (err) {
+      setStatus({ type: 'error', text: err.message })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <>
+      {status && <div className={`alert alert-${status.type}`}>{status.text}</div>}
+      <div className={`alert ${form.geocoding_enabled ? 'alert-success' : 'alert-error'}`}>
+        {form.geocoding_enabled ? t.admin.shippingKeyOk : t.admin.shippingKeyMissing}
+      </div>
+
+      <form className="contact-form shipping-form" onSubmit={handleSubmit}>
+        <label>
+          {t.admin.shippingOfficeAddress}
+          <AddressInput
+            required
+            placeholder={t.admin.shippingOfficeAddress}
+            value={form.office_address}
+            onChange={(v) => setForm({ ...form, office_address: v })}
+          />
+        </label>
+        <p className="muted shipping-hint">{t.admin.shippingOfficeHint}</p>
+
+        <div className="shipping-tiers">
+          <div className="shipping-tier">
+            <label>
+              {t.admin.shippingFreeKm}
+              <input type="number" min="0" step="0.1" value={form.free_km} onChange={set('free_km')} />
+            </label>
+          </div>
+          <div className="shipping-tier">
+            <label>
+              {t.admin.shippingUpTo}
+              <input type="number" min="0" step="0.1" value={form.tier2_km} onChange={set('tier2_km')} />
+            </label>
+            <label>
+              {t.admin.shippingFee}
+              <input type="number" min="0" step="0.01" value={form.tier2_price} onChange={set('tier2_price')} />
+            </label>
+          </div>
+          <div className="shipping-tier">
+            <label>
+              {t.admin.shippingUpTo}
+              <input type="number" min="0" step="0.1" value={form.tier3_km} onChange={set('tier3_km')} />
+            </label>
+            <label>
+              {t.admin.shippingFee}
+              <input type="number" min="0" step="0.01" value={form.tier3_price} onChange={set('tier3_price')} />
+            </label>
+          </div>
+          <div className="shipping-tier">
+            <label>
+              {t.admin.shippingUpTo}
+              <input type="number" min="0" step="0.1" value={form.tier4_km} onChange={set('tier4_km')} />
+            </label>
+            <label>
+              {t.admin.shippingFee}
+              <input type="number" min="0" step="0.01" value={form.tier4_price} onChange={set('tier4_price')} />
+            </label>
+          </div>
+          <div className="shipping-tier shipping-tier-beyond">
+            <span className="shipping-tier-label">{t.admin.shippingBeyond.replace('{km}', form.tier4_km)}</span>
+            <span className="muted">{t.admin.shippingBeyondValue}</span>
+          </div>
+        </div>
+
+        <button className="btn btn-primary" disabled={saving}>
+          {saving ? t.admin.saving : t.admin.shippingSave}
+        </button>
+      </form>
     </>
   )
 }

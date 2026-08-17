@@ -32,6 +32,9 @@ export const createRentalCheckout = (payload) =>
 export const sendMessage = (payload) =>
   request('/contact', { method: 'POST', body: JSON.stringify(payload) })
 
+export const getShippingQuote = (address) =>
+  request('/shipping/quote', { method: 'POST', body: JSON.stringify({ address }) })
+
 // --- Auth ---
 export const login = (username, password) =>
   request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
@@ -75,3 +78,8 @@ export const adminGetOrders = () => request('/admin/orders')
 
 export const adminUpdateOrder = (id, status) =>
   request(`/admin/orders/${id}`, { method: 'PUT', body: JSON.stringify({ status }) })
+
+export const adminGetShipping = () => request('/admin/shipping')
+
+export const adminUpdateShipping = (payload) =>
+  request('/admin/shipping', { method: 'PUT', body: JSON.stringify(payload) })

@@ -1869,6 +1869,48 @@ main {
   border-color: var(--blue);
 }
 
+.shipping-form { max-width: 640px; }
+
+.shipping-hint {
+  font-size: 0.82rem;
+  margin-top: -10px;
+}
+
+.shipping-tiers {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--gray-100);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.shipping-tier {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.shipping-tier label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.shipping-tier-beyond {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px dashed var(--gray-200);
+}
+
+.shipping-tier-label {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
 /* ---------- Alerts ---------- */
 .alert {
   border-radius: var(--radius-sm);
@@ -2056,6 +2098,17 @@ main {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.shipping-quote {
+  font-size: 0.85rem;
+  color: var(--gray-700);
+  padding: 2px 2px 4px;
+}
+
+.cart-grand-total {
+  padding-top: 8px;
+  border-top: 1px dashed var(--gray-200);
 }
 
 /* ---------- Login page ---------- */
@@ -2284,6 +2337,11 @@ main {
   background: #ede9fe;
   color: #5b21b6;
   margin-left: 4px;
+}
+
+.tag-warn {
+  background: #fef3c7;
+  color: #92400e;
 }
 
 .status-select {

@@ -2,6 +2,8 @@ import json
 import math
 import os
 import sqlite3
+import urllib.parse
+import urllib.request
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -26,6 +28,11 @@ STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 if STRIPE_SECRET_KEY:
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
+
+# Server-side key for the Distance Matrix API (shipping fee calculation).
+# Distinct from the frontend's VITE_GOOGLE_MAPS_KEY, which only powers address
+# autocomplete and is never trusted for pricing.
+GOOGLE_MAPS_SERVER_KEY = os.environ.get("GOOGLE_MAPS_SERVER_KEY", "")
 
 
 def frontend_base_url():
@@ -134,7 +141,23 @@ CREATE TABLE IF NOT EXISTS orders (
     order_type TEXT DEFAULT 'purchase',
     rental_start TEXT,
     rental_end TEXT,
+    shipping_fee REAL,
+    shipping_distance_km REAL,
+    shipping_mode TEXT,
     created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS shipping_settings (
+    id {PK_TYPE},
+    office_address TEXT NOT NULL DEFAULT '',
+    free_km REAL NOT NULL DEFAULT 5,
+    tier2_km REAL NOT NULL DEFAULT 10,
+    tier2_price REAL NOT NULL DEFAULT 15,
+    tier3_km REAL NOT NULL DEFAULT 20,
+    tier3_price REAL NOT NULL DEFAULT 25,
+    tier4_km REAL NOT NULL DEFAULT 30,
+    tier4_price REAL NOT NULL DEFAULT 30,
+    updated_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -394,6 +417,9 @@ def init_db():
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_type TEXT DEFAULT 'purchase'",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS rental_start TEXT",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS rental_end TEXT",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_fee REAL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_distance_km REAL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_mode TEXT",
         "ALTER TABLE lot_items ADD COLUMN IF NOT EXISTS grade TEXT NOT NULL DEFAULT 'refurbished'",
     ]
     migrations_sqlite = [
@@ -405,6 +431,9 @@ def init_db():
         "ALTER TABLE orders ADD COLUMN order_type TEXT DEFAULT 'purchase'",
         "ALTER TABLE orders ADD COLUMN rental_start TEXT",
         "ALTER TABLE orders ADD COLUMN rental_end TEXT",
+        "ALTER TABLE orders ADD COLUMN shipping_fee REAL",
+        "ALTER TABLE orders ADD COLUMN shipping_distance_km REAL",
+        "ALTER TABLE orders ADD COLUMN shipping_mode TEXT",
         "ALTER TABLE lot_items ADD COLUMN grade TEXT NOT NULL DEFAULT 'refurbished'",
     ]
     if IS_POSTGRES:
@@ -475,6 +504,10 @@ def init_db():
         cur.execute(
             f"INSERT INTO users (username, password_hash, role) VALUES ({ph},{ph},{ph})",
             ("admin", generate_password_hash(admin_password), "admin"))
+    if count("shipping_settings") == 0:
+        cur.execute(
+            f"INSERT INTO shipping_settings (office_address, updated_at) VALUES ({ph},{ph})",
+            ("", datetime.utcnow().isoformat()))
     conn.commit()
     conn.close()
 
@@ -954,6 +987,117 @@ def admin_update_order(order_id):
 
 
 # ---------------------------------------------------------------------------
+# Shipping: office address + distance-based fee tiers
+# ---------------------------------------------------------------------------
+
+SHIPPING_NUMERIC_FIELDS = ["free_km", "tier2_km", "tier2_price",
+                          "tier3_km", "tier3_price", "tier4_km", "tier4_price"]
+
+
+def get_shipping_settings():
+    row = fetch_one("SELECT * FROM shipping_settings ORDER BY id LIMIT 1")
+    return dict(row) if row else None
+
+
+def google_distance_km(origin, destination):
+    """Driving distance in km between two addresses, or None if it can't be resolved."""
+    if not GOOGLE_MAPS_SERVER_KEY:
+        return None
+    params = urllib.parse.urlencode({
+        "origins": origin, "destinations": destination,
+        "units": "metric", "key": GOOGLE_MAPS_SERVER_KEY,
+    })
+    url = f"https://maps.googleapis.com/maps/api/distancematrix/json?{params}"
+    try:
+        with urllib.request.urlopen(url, timeout=6) as resp:
+            data = json.loads(resp.read())
+        element = data["rows"][0]["elements"][0]
+        if element.get("status") != "OK":
+            return None
+        return element["distance"]["value"] / 1000.0
+    except Exception:
+        return None
+
+
+def compute_shipping(address):
+    """Distance-tiered shipping fee from the configured office address.
+
+    Returns fee=None with mode 'canada_post' (beyond the last tier) or
+    'unavailable' (no office address configured, or the distance couldn't be
+    resolved) — both mean the fee needs a manual quote rather than an
+    automatic charge.
+    """
+    settings = get_shipping_settings()
+    address = str(address or "").strip()
+    if not settings or not settings["office_address"].strip() or not address:
+        return {"fee": None, "distance_km": None, "mode": "unavailable"}
+    distance_km = google_distance_km(settings["office_address"], address)
+    if distance_km is None:
+        return {"fee": None, "distance_km": None, "mode": "unavailable"}
+    distance_km = round(distance_km, 1)
+    if distance_km <= settings["free_km"]:
+        return {"fee": 0.0, "distance_km": distance_km, "mode": "free"}
+    if distance_km <= settings["tier2_km"]:
+        return {"fee": settings["tier2_price"], "distance_km": distance_km, "mode": "flat"}
+    if distance_km <= settings["tier3_km"]:
+        return {"fee": settings["tier3_price"], "distance_km": distance_km, "mode": "flat"}
+    if distance_km <= settings["tier4_km"]:
+        return {"fee": settings["tier4_price"], "distance_km": distance_km, "mode": "flat"}
+    return {"fee": None, "distance_km": distance_km, "mode": "canada_post"}
+
+
+@app.get("/api/admin/shipping")
+@require_admin
+def admin_get_shipping():
+    settings = get_shipping_settings() or {}
+    settings["geocoding_enabled"] = bool(GOOGLE_MAPS_SERVER_KEY)
+    return jsonify(settings)
+
+
+@app.put("/api/admin/shipping")
+@require_admin
+def admin_update_shipping():
+    data = request.get_json(silent=True) or {}
+    values = {}
+    errors = []
+    if "office_address" in data:
+        values["office_address"] = str(data["office_address"]).strip()
+    for field in SHIPPING_NUMERIC_FIELDS:
+        if field in data:
+            try:
+                values[field] = max(0.0, float(data[field]))
+            except (TypeError, ValueError):
+                errors.append(field)
+    if errors:
+        return jsonify({"error": f"Invalid fields: {', '.join(errors)}"}), 400
+    if not values:
+        return jsonify({"error": "No fields to update"}), 400
+
+    current = get_shipping_settings() or {}
+    merged = {**current, **values}
+    if not (merged["free_km"] <= merged["tier2_km"] <= merged["tier3_km"] <= merged["tier4_km"]):
+        return jsonify({"error": "Distance tiers must increase: free < tier2 < tier3 < tier4"}), 400
+
+    values["updated_at"] = datetime.utcnow().isoformat()
+    assignments = ", ".join(f"{k} = ?" for k in values)
+    db_execute(f"UPDATE shipping_settings SET {assignments} WHERE id = ?",
+               [*values.values(), current["id"]])
+    get_db().commit()
+    settings = get_shipping_settings()
+    settings["geocoding_enabled"] = bool(GOOGLE_MAPS_SERVER_KEY)
+    return jsonify(settings)
+
+
+@app.post("/api/shipping/quote")
+def shipping_quote():
+    data = request.get_json(silent=True) or {}
+    address = str(data.get("address") or "").strip()
+    if not address:
+        return jsonify({"error": "Missing address"}), 400
+    return jsonify(compute_shipping(address))
+
+
+# ---------------------------------------------------------------------------
 # Public: products, services, orders, contact
 # ---------------------------------------------------------------------------
 
@@ -1012,15 +1156,18 @@ def validate_cart(data):
     return {"total": round(total, 2), "lines": lines, "products": products}, None
 
 
-def insert_order(data, cart, status="new", payment_method="cod"):
+def insert_order(data, cart, shipping, status="new", payment_method="cod"):
+    grand_total = round(cart["total"] + (shipping["fee"] or 0), 2)
     order_id = insert_returning_id(
         "INSERT INTO orders (customer_name, email, phone, address, items, total,"
-        " status, payment_method, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        " status, payment_method, shipping_fee, shipping_distance_km, shipping_mode,"
+        " created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         (data["customer_name"], data["email"], data.get("phone", ""),
-         data["address"], "; ".join(cart["lines"]), cart["total"],
-         status, payment_method, datetime.utcnow().isoformat(timespec="seconds")))
+         data["address"], "; ".join(cart["lines"]), grand_total,
+         status, payment_method, shipping["fee"], shipping["distance_km"], shipping["mode"],
+         datetime.utcnow().isoformat(timespec="seconds")))
     get_db().commit()
-    return order_id
+    return order_id, grand_total
 
 
 @app.post("/api/orders")
@@ -1029,8 +1176,10 @@ def create_order():
     cart, error = validate_cart(data)
     if error:
         return error
-    order_id = insert_order(data, cart)
-    return jsonify({"order_id": order_id, "total": cart["total"],
+    shipping = compute_shipping(data["address"])
+    order_id, grand_total = insert_order(data, cart, shipping)
+    return jsonify({"order_id": order_id, "total": grand_total,
+                    "shipping_fee": shipping["fee"], "shipping_mode": shipping["mode"],
                     "message": "Order placed successfully. We will contact you to confirm delivery."}), 201
 
 
@@ -1047,6 +1196,8 @@ def create_checkout_session():
     if error:
         return error
 
+    shipping = compute_shipping(data["address"])
+
     line_items = [{
         "price_data": {
             "currency": "cad",
@@ -1055,8 +1206,17 @@ def create_checkout_session():
         },
         "quantity": qty,
     } for row, qty in cart["products"]]
+    if shipping["fee"]:
+        line_items.append({
+            "price_data": {
+                "currency": "cad",
+                "product_data": {"name": "Shipping"},
+                "unit_amount": int(round(shipping["fee"] * 100)),
+            },
+            "quantity": 1,
+        })
 
-    order_id = insert_order(data, cart, status="awaiting_payment", payment_method="card")
+    order_id, _ = insert_order(data, cart, shipping, status="awaiting_payment", payment_method="card")
     base = frontend_base_url()
     try:
         checkout = stripe.checkout.Session.create(
