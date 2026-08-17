@@ -1677,6 +1677,111 @@ main {
   padding: 60px 0;
 }
 
+.shop-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 32px;
+  align-items: start;
+}
+
+.shop-filters {
+  border: 1px solid var(--gray-100);
+  border-radius: var(--radius);
+  padding: 20px;
+  position: sticky;
+  top: 90px;
+}
+
+.filter-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.filter-panel-head h3 {
+  font-size: 0.95rem;
+  font-weight: 800;
+  margin: 0;
+}
+
+.filter-clear {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--blue);
+  white-space: nowrap;
+}
+
+.filter-clear:hover { text-decoration: underline; }
+
+.filter-group {
+  padding: 16px 0;
+  border-top: 1px solid var(--gray-100);
+}
+
+.filter-group:first-of-type { padding-top: 0; border-top: none; }
+
+.filter-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--gray-700);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+}
+
+.price-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.price-range input {
+  width: 0;
+  flex: 1;
+  border: 1.5px solid var(--gray-200);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 0.85rem;
+  color: var(--black);
+  background: var(--white);
+}
+
+.price-range input:focus { outline: none; border-color: var(--blue); }
+
+.price-range-sep { color: var(--gray-500); }
+
+.filter-options {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.filter-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  color: var(--gray-700);
+  cursor: pointer;
+}
+
+.filter-checkbox input {
+  accent-color: var(--blue);
+  width: 15px;
+  height: 15px;
+}
+
+@media (max-width: 860px) {
+  .shop-layout { grid-template-columns: 1fr; }
+  .shop-filters { position: static; }
+  .filter-options { max-height: none; }
+}
+
 /* ---------- Contact ---------- */
 .contact-grid {
   display: grid;
