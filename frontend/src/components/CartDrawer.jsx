@@ -117,78 +117,83 @@ export default function CartDrawer() {
 
             {items.length > 0 && (
               <div className="cart-footer">
-                <div className="cart-total">
-                  <span>{checkout ? t.cart.subtotal : t.cart.total}</span>
-                  <strong>${total.toFixed(2)}</strong>
-                </div>
+                <form className="checkout-form" onSubmit={handleSubmit}>
+                  {/* Address (and therefore shipping) is collected up front, before the
+                      "Proceed to Checkout" step, so the customer sees the full cost —
+                      including shipping — before they commit to checking out. */}
+                  <AddressInput
+                    required
+                    placeholder={t.cart.address}
+                    value={form.address}
+                    onChange={(v) => setForm((prev) => ({ ...prev, address: v }))}
+                  />
 
-                {!checkout ? (
-                  <button className="btn btn-primary btn-block" onClick={() => setCheckout(true)}>
-                    {t.cart.checkout}
-                  </button>
-                ) : (
-                  <form className="checkout-form" onSubmit={handleSubmit}>
-                    <input
-                      required
-                      placeholder={t.cart.fullName}
-                      value={form.customer_name}
-                      onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
-                    />
-                    <input
-                      required
-                      type="email"
-                      placeholder={t.cart.email}
-                      value={form.email}
-                      onChange={(e) => setForm({ ...form, email: e.target.value })}
-                    />
-                    <input
-                      placeholder={t.cart.phone}
-                      value={form.phone}
-                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    />
-                    <AddressInput
-                      required
-                      placeholder={t.cart.address}
-                      value={form.address}
-                      onChange={(v) => setForm((prev) => ({ ...prev, address: v }))}
-                    />
+                  <div className="shipping-quote">
+                    {!form.address.trim() && <span className="muted">{t.cart.shippingEnterAddress}</span>}
+                    {form.address.trim() && !shipping && <span className="muted">{t.cart.shippingCalculating}</span>}
+                    {shipping?.mode === 'free' && (
+                      <span>{t.cart.shipping}: <strong>{t.cart.shippingFree}</strong></span>
+                    )}
+                    {shipping?.mode === 'flat' && (
+                      <span>{t.cart.shipping}: <strong>${shipping.fee.toFixed(2)}</strong></span>
+                    )}
+                    {shipping?.mode === 'canada_post' && <span className="muted">{t.cart.shippingCanadaPost}</span>}
+                    {shipping?.mode === 'unavailable' && <span className="muted">{t.cart.shippingUnavailable}</span>}
+                  </div>
 
-                    <div className="shipping-quote">
-                      {!form.address.trim() && <span className="muted">{t.cart.shippingEnterAddress}</span>}
-                      {form.address.trim() && !shipping && <span className="muted">{t.cart.shippingCalculating}</span>}
-                      {shipping?.mode === 'free' && (
-                        <span>{t.cart.shipping}: <strong>{t.cart.shippingFree}</strong></span>
-                      )}
-                      {shipping?.mode === 'flat' && (
-                        <span>{t.cart.shipping}: <strong>${shipping.fee.toFixed(2)}</strong></span>
-                      )}
-                      {shipping?.mode === 'canada_post' && <span className="muted">{t.cart.shippingCanadaPost}</span>}
-                      {shipping?.mode === 'unavailable' && <span className="muted">{t.cart.shippingUnavailable}</span>}
-                    </div>
+                  <div className="cart-total">
+                    <span>{t.cart.subtotal}</span>
+                    <strong>${total.toFixed(2)}</strong>
+                  </div>
+                  <div className="cart-total cart-grand-total">
+                    <span>{t.cart.total}</span>
+                    <strong>${grandTotal.toFixed(2)}</strong>
+                  </div>
 
-                    <div className="cart-total cart-grand-total">
-                      <span>{t.cart.total}</span>
-                      <strong>${grandTotal.toFixed(2)}</strong>
-                    </div>
-
-                    <button
-                      type="submit"
-                      value="card"
-                      className="btn btn-primary btn-block"
-                      disabled={submitting}
-                    >
-                      {submitting ? t.cart.placing : `${t.cart.payCard} · $${grandTotal.toFixed(2)}`}
+                  {!checkout ? (
+                    <button type="button" className="btn btn-primary btn-block" onClick={() => setCheckout(true)}>
+                      {t.cart.checkout}
                     </button>
-                    <button
-                      type="submit"
-                      value="cod"
-                      className="btn btn-ghost btn-block"
-                      disabled={submitting}
-                    >
-                      {t.cart.payDelivery}
-                    </button>
-                  </form>
-                )}
+                  ) : (
+                    <>
+                      <input
+                        required
+                        placeholder={t.cart.fullName}
+                        value={form.customer_name}
+                        onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
+                      />
+                      <input
+                        required
+                        type="email"
+                        placeholder={t.cart.email}
+                        value={form.email}
+                        onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      />
+                      <input
+                        placeholder={t.cart.phone}
+                        value={form.phone}
+                        onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                      />
+
+                      <button
+                        type="submit"
+                        value="card"
+                        className="btn btn-primary btn-block"
+                        disabled={submitting}
+                      >
+                        {submitting ? t.cart.placing : `${t.cart.payCard} · $${grandTotal.toFixed(2)}`}
+                      </button>
+                      <button
+                        type="submit"
+                        value="cod"
+                        className="btn btn-ghost btn-block"
+                        disabled={submitting}
+                      >
+                        {t.cart.payDelivery}
+                      </button>
+                    </>
+                  )}
+                </form>
               </div>
             )}
           </>
