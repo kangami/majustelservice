@@ -21,6 +21,10 @@ services:
         sync: false
       - key: FRONTEND_URL
         sync: false
+      # Distance Matrix key for shipping fees. Must be a SERVER key: a browser
+      # key restricted to HTTP referrers is refused with REQUEST_DENIED here.
+      - key: GOOGLE_MAPS_SERVER_KEY
+        sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: majustelservice-db

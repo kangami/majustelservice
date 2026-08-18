@@ -1000,8 +1000,13 @@ def get_shipping_settings():
 
 
 def google_distance_km(origin, destination):
-    """Driving distance in km between two addresses, or None if it can't be resolved."""
+    """Driving distance in km between two addresses, or None if it can't be resolved.
+
+    Every failure is logged: a silent None here shows up as a plain HTTP 200 with
+    mode 'unavailable', which is impossible to diagnose from an access log alone.
+    """
     if not GOOGLE_MAPS_SERVER_KEY:
+        app.logger.warning("Shipping: GOOGLE_MAPS_SERVER_KEY is not set, distance skipped")
         return None
     params = urllib.parse.urlencode({
         "origins": origin, "destinations": destination,
@@ -1011,12 +1016,25 @@ def google_distance_km(origin, destination):
     try:
         with urllib.request.urlopen(url, timeout=6) as resp:
             data = json.loads(resp.read())
-        element = data["rows"][0]["elements"][0]
-        if element.get("status") != "OK":
-            return None
-        return element["distance"]["value"] / 1000.0
-    except Exception:
+    except Exception as exc:
+        app.logger.warning("Shipping: Distance Matrix call failed: %s", exc)
         return None
+
+    # A rejected key (referrer restriction, API not enabled, billing off) answers
+    # with a top level status and an empty rows list, never with an element.
+    if data.get("status") != "OK":
+        app.logger.warning("Shipping: Distance Matrix refused the request (%s): %s",
+                           data.get("status"), data.get("error_message") or "no detail given")
+        return None
+    try:
+        element = data["rows"][0]["elements"][0]
+    except (KeyError, IndexError):
+        app.logger.warning("Shipping: Distance Matrix returned no rows")
+        return None
+    if element.get("status") != "OK":
+        app.logger.warning("Shipping: no route to %r (%s)", destination, element.get("status"))
+        return None
+    return element["distance"]["value"] / 1000.0
 
 
 def compute_shipping(address):
