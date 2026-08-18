@@ -3,6 +3,7 @@ import { useCart } from '../CartContext.jsx'
 import { useLang } from '../LanguageContext.jsx'
 import { productImages } from '../imageUtils.js'
 import RentalModal from './RentalModal.jsx'
+import ProductDetailModal from './ProductDetailModal.jsx'
 import Icon from './Icons.jsx'
 
 export default function ProductCard({ product }) {
@@ -10,6 +11,7 @@ export default function ProductCard({ product }) {
   const { t } = useLang()
   const [hover, setHover] = useState(false)
   const [renting, setRenting] = useState(false)
+  const [viewing, setViewing] = useState(false)
 
   const imgs = productImages(product)
   const src = hover && imgs[1] ? imgs[1] : imgs[0]
@@ -20,6 +22,7 @@ export default function ProductCard({ product }) {
       className="product-card"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onClick={() => setViewing(true)}
     >
       <div className="product-visual">
         {product.badge && (
@@ -45,17 +48,21 @@ export default function ProductCard({ product }) {
             <span className="price">${product.price.toFixed(2)}</span>
             {product.old_price && <span className="old-price">${product.old_price.toFixed(2)}</span>}
           </div>
-          <button className="btn btn-primary btn-sm" onClick={() => addItem(product)}>
+          <button className="btn btn-primary btn-sm" onClick={(e) => { e.stopPropagation(); addItem(product) }}>
             <Icon name="cart" size={16} /> {t.shop.add}
           </button>
         </div>
         {rentable && (
-          <button className="btn btn-outline btn-sm btn-block rent-button" onClick={() => setRenting(true)}>
+          <button
+            className="btn btn-outline btn-sm btn-block rent-button"
+            onClick={(e) => { e.stopPropagation(); setRenting(true) }}
+          >
             <Icon name="clock" size={15} /> {t.rental.rent} · ${product.rental_price.toFixed(2)}{t.rental.perHour}
           </button>
         )}
       </div>
       {renting && <RentalModal product={product} onClose={() => setRenting(false)} />}
+      {viewing && <ProductDetailModal product={product} onClose={() => setViewing(false)} />}
     </article>
   )
 }
