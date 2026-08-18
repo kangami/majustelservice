@@ -38,6 +38,8 @@ Open http://localhost:5173 — the dev server proxies `/api/*` to the Flask back
 | `STRIPE_SECRET_KEY` | Enables card checkout; omit to only offer pay-on-delivery |
 | `GOOGLE_MAPS_SERVER_KEY` | Server-side key with the Distance Matrix API enabled, used to price shipping by road distance from the office address. Without it, every order falls back to a manual shipping quote. Distinct from the frontend's `VITE_GOOGLE_MAPS_KEY` (address autocomplete only) — never reuse a browser-restricted key here. |
 | `FRONTEND_URL` | Used to build Stripe redirect URLs when the `Origin` header isn't available |
+| `RESEND_API_KEY` | Enables order confirmation / status-update emails via [Resend](https://resend.com). Without it, orders still work — emails are just skipped (a warning is logged instead). |
+| `ORDER_EMAIL_FROM` | The `from` address for order emails, e.g. `MajustelServices <orders@majustelservices.ca>`. Must be on a domain verified in the Resend dashboard — an unverified domain is rejected. Defaults to Resend's `onboarding@resend.dev` sandbox address, which only delivers to the Resend account's own email. |
 
 ## Admin panel
 
@@ -75,3 +77,4 @@ Open http://localhost:5173/login (or click the shield icon in the navbar).
 - Computer maintenance services with booking via the contact form
 - Orders and contact messages stored in SQLite
 - Fully responsive, modern white/blue/black design
+- Order emails via Resend: the customer gets a branded confirmation email once an order is placed (or, for card payments, once payment is verified), and another whenever its status changes in the admin panel. See `RESEND_API_KEY` / `ORDER_EMAIL_FROM` above.

@@ -1,3 +1,4 @@
+import html
 import json
 import math
 import os
@@ -33,6 +34,15 @@ if STRIPE_SECRET_KEY:
 # Distinct from the frontend's VITE_GOOGLE_MAPS_KEY, which only powers address
 # autocomplete and is never trusted for pricing.
 GOOGLE_MAPS_SERVER_KEY = os.environ.get("GOOGLE_MAPS_SERVER_KEY", "")
+
+# Transactional order emails (confirmation + status updates), sent via Resend.
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+if RESEND_API_KEY:
+    import resend
+    resend.api_key = RESEND_API_KEY
+# Must be on a domain verified in the Resend dashboard, or emails are rejected;
+# onboarding@resend.dev only works for sending to the account owner's own address.
+ORDER_EMAIL_FROM = os.environ.get("ORDER_EMAIL_FROM", "MajustelServices <onboarding@resend.dev>")
 
 
 def frontend_base_url():
@@ -978,11 +988,17 @@ def admin_update_order(order_id):
     status = data.get("status")
     if status not in ORDER_STATUSES:
         return jsonify({"error": f"Status must be one of: {', '.join(ORDER_STATUSES)}"}), 400
-    cur = db_execute("UPDATE orders SET status = ? WHERE id = ?", (status, order_id))
-    get_db().commit()
-    if cur.rowcount == 0:
+    existing = fetch_one("SELECT status FROM orders WHERE id = ?", (order_id,))
+    if existing is None:
         return jsonify({"error": "Order not found"}), 404
+    changed = existing["status"] != status
+    db_execute("UPDATE orders SET status = ? WHERE id = ?", (status, order_id))
+    get_db().commit()
     row = fetch_one("SELECT * FROM orders WHERE id = ?", (order_id,))
+    if changed:
+        emoji, heading, message = STATUS_EMAIL_COPY.get(
+            status, ("📦", "Order update", "Your order status has changed."))
+        send_order_email(dict(row), heading, emoji, message)
     return jsonify(dict(row))
 
 
@@ -1116,6 +1132,102 @@ def shipping_quote():
 
 
 # ---------------------------------------------------------------------------
+# Order emails: confirmation on placement/payment, update on status change
+# ---------------------------------------------------------------------------
+
+# (emoji, heading, message) shown for each order status. Falls back to a
+# generic "Order update" for any status not listed here.
+STATUS_EMAIL_COPY = {
+    "awaiting_payment": ("⏳", "Payment pending", "We're waiting for your payment to go through."),
+    "paid": ("✅", "Payment received", "Your payment has been received — we're getting your order ready."),
+    "processing": ("🛠️", "Order in progress", "Your order is being prepared."),
+    "shipped": ("🚚", "On its way", "Your order is on its way to you."),
+    "completed": ("📦", "Order completed", "Your order is complete. Thanks for shopping with us!"),
+    "cancelled": ("❌", "Order cancelled", "Your order has been cancelled. Contact us if this is unexpected."),
+}
+
+
+def render_order_email(heading, emoji, message, order):
+    """Self-contained HTML email: inline styles only, since email clients
+    ignore <style> blocks and external stylesheets almost universally."""
+    base = frontend_base_url()
+    name = html.escape(order["customer_name"] or "there")
+    items = html.escape(order["items"] or "")
+    total = f"{order['total']:.2f}"
+    heading_esc = html.escape(heading)
+    message_esc = html.escape(message)
+
+    shipping_line = ""
+    if order.get("shipping_fee"):
+        distance = order.get("shipping_distance_km")
+        distance_note = f" ({distance} km)" if distance is not None else ""
+        shipping_line = (
+            f'<p style="margin:6px 0 0;font-size:13px;color:#5b6472;">'
+            f'Includes ${order["shipping_fee"]:.2f} shipping{distance_note}</p>'
+        )
+
+    return f"""<!doctype html>
+<html>
+  <body style="margin:0;padding:24px;background:#f2f3f7;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+    <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 2px 12px rgba(16,21,29,0.08);">
+      <div style="height:6px;background:linear-gradient(90deg,#2470c2,#3b8ede);"></div>
+      <div style="padding:36px 24px;text-align:center;background:linear-gradient(135deg,#10151d,#2470c2);">
+        <span style="font-family:Georgia,'Times New Roman',serif;font-size:26px;font-weight:800;color:#ffffff;letter-spacing:0.3px;">
+          Majustel<span style="color:#8ec9f7;">Services</span>
+        </span>
+      </div>
+      <div style="padding:32px 28px;">
+        <p style="margin:0 0 18px;font-size:15px;color:#10151d;">Hello {name},</p>
+        <h1 style="margin:0 0 16px;font-size:22px;color:#10151d;">{heading_esc} {emoji}</h1>
+        <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#3a4048;">{message_esc}</p>
+
+        <div style="background:#f6f8fb;border-radius:12px;padding:16px 18px;margin-bottom:20px;">
+          <p style="margin:0 0 6px;font-size:12px;color:#5b6472;text-transform:uppercase;letter-spacing:0.05em;">Order #{order["id"]}</p>
+          <p style="margin:0;font-size:13px;color:#3a4048;font-family:Consolas,Menlo,monospace;word-break:break-word;">{items}</p>
+          <p style="margin:10px 0 0;font-size:18px;font-weight:700;color:#10151d;">Total: ${total}</p>
+          {shipping_line}
+        </div>
+
+        <p style="margin:0;font-size:15px;color:#10151d;">All the best,<br>The MajustelServices Team 💻</p>
+      </div>
+      <div style="background:#3b8ede;padding:20px 24px;text-align:center;">
+        <p style="margin:0 0 8px;font-size:15px;font-weight:800;color:#10151d;">majustelservices.ca</p>
+        <p style="margin:0;font-size:13px;">
+          <a href="{base}/shop" style="color:#10151d;text-decoration:none;font-weight:600;">Shop</a>
+          &nbsp;&nbsp;·&nbsp;&nbsp;
+          <a href="{base}/services" style="color:#10151d;text-decoration:none;font-weight:600;">Services</a>
+          &nbsp;&nbsp;·&nbsp;&nbsp;
+          <a href="{base}/contact" style="color:#10151d;text-decoration:none;font-weight:600;">Contact</a>
+        </p>
+      </div>
+      <div style="background:#10151d;padding:20px 24px;text-align:center;">
+        <p style="margin:0 0 8px;font-size:12px;">
+          <a href="mailto:hello@majustelservices.ca" style="color:#ffffff;text-decoration:underline;">Contact Us</a>
+        </p>
+        <p style="margin:0;font-size:11px;color:#8b93a1;">45 Pl. Charles-Le Moyne, Longueuil, QC, Canada, J4K 5G5</p>
+        <p style="margin:6px 0 0;font-size:11px;color:#5b6472;">© {datetime.utcnow().year} MajustelServices. All rights reserved.</p>
+      </div>
+    </div>
+  </body>
+</html>"""
+
+
+def send_order_email(order, heading, emoji, message):
+    """Best-effort: a broken email provider must never block placing or updating an order."""
+    if not RESEND_API_KEY or not order.get("email"):
+        return
+    try:
+        resend.Emails.send({
+            "from": ORDER_EMAIL_FROM,
+            "to": order["email"],
+            "subject": f"{heading} — Order #{order['id']}",
+            "html": render_order_email(heading, emoji, message, order),
+        })
+    except Exception as exc:
+        app.logger.warning("Order email failed for order #%s: %s", order.get("id"), exc)
+
+
+# ---------------------------------------------------------------------------
 # Public: products, services, orders, contact
 # ---------------------------------------------------------------------------
 
@@ -1196,6 +1308,10 @@ def create_order():
         return error
     shipping = compute_shipping(data["address"])
     order_id, grand_total = insert_order(data, cart, shipping)
+    order = fetch_one("SELECT * FROM orders WHERE id = ?", (order_id,))
+    send_order_email(dict(order), "Order confirmed", "🎉",
+                     "Thanks for your order! We've received it and will get started right away. "
+                     "We'll email you again as soon as its status changes.")
     return jsonify({"order_id": order_id, "total": grand_total,
                     "shipping_fee": shipping["fee"], "shipping_mode": shipping["mode"],
                     "message": "Order placed successfully. We will contact you to confirm delivery."}), 201
@@ -1348,6 +1464,10 @@ def verify_checkout():
     if paid and row["status"] == "awaiting_payment":
         db_execute("UPDATE orders SET status = 'paid' WHERE id = ?", (row["id"],))
         get_db().commit()
+        row = fetch_one("SELECT * FROM orders WHERE id = ?", (row["id"],))
+        send_order_email(dict(row), "Order confirmed", "🎉",
+                         "Thanks for your order! Your payment has been received and we'll get "
+                         "started right away. We'll email you again as soon as its status changes.")
     return jsonify({"paid": paid, "order_id": row["id"], "total": row["total"]})
 
 
